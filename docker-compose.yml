@@ -1,0 +1,118 @@
+services:
+  # ─────────────────────────────────────────────
+  # PostgreSQL 16
+  # ─────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: codeworld_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-codeworld}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-codeworld}
+      POSTGRES_DB: ${POSTGRES_DB:-codeworld}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-codeworld}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ─────────────────────────────────────────────
+  # Redis 7
+  # ─────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: codeworld_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ─────────────────────────────────────────────
+  # FastAPI — API Server
+  # ─────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: codeworld_api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-codeworld}:${POSTGRES_PASSWORD:-codeworld}@postgres:5432/${POSTGRES_DB:-codeworld}
+      REDIS_URL: redis://redis:6379
+      ENVIRONMENT: development
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-change-in-production}
+      GITHUB_CLONE_BASE_DIR: /tmp/codeworld_repos
+      GITHUB_APP_ID: ${GITHUB_APP_ID:-}
+      GITHUB_APP_CLIENT_ID: ${GITHUB_APP_CLIENT_ID:-}
+      GITHUB_APP_CLIENT_SECRET: ${GITHUB_APP_CLIENT_SECRET:-}
+      GITHUB_APP_PRIVATE_KEY_PATH: /run/secrets/github_app_private_key.pem
+      GITHUB_APP_SLUG: ${GITHUB_APP_SLUG:-}
+      TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:-}
+    volumes:
+      - ./apps/api:/app
+      - ./packages/db:/packages/db:ro
+      - ./packages/github_app:/packages/github_app:ro
+      - repo_clones:/tmp/codeworld_repos
+      - type: bind
+        source: ${GITHUB_APP_PRIVATE_KEY_HOST_PATH:-D:/codeworld-secrets/codeworld-dev-vlad.pem}
+        target: /run/secrets/github_app_private_key.pem
+        read_only: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # ─────────────────────────────────────────────
+  # ARQ Worker — Analysis Pipeline
+  # ─────────────────────────────────────────────
+  worker:
+    build:
+      context: .
+      dockerfile: workers/analyzer/Dockerfile
+    container_name: codeworld_worker
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-codeworld}:${POSTGRES_PASSWORD:-codeworld}@postgres:5432/${POSTGRES_DB:-codeworld}
+      REDIS_URL: redis://redis:6379
+      ENVIRONMENT: development
+      GITHUB_CLONE_BASE_DIR: /tmp/codeworld_repos
+      MAX_REPO_SIZE_MB: ${MAX_REPO_SIZE_MB:-500}
+      ANALYSIS_TIMEOUT_SECONDS: ${ANALYSIS_TIMEOUT_SECONDS:-300}
+      GITHUB_APP_ID: ${GITHUB_APP_ID:-}
+      GITHUB_APP_CLIENT_ID: ${GITHUB_APP_CLIENT_ID:-}
+      GITHUB_APP_PRIVATE_KEY_PATH: /run/secrets/github_app_private_key.pem
+      TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:-}
+    volumes:
+      - ./workers/analyzer:/app
+      - ./packages/db:/packages/db:ro
+      - ./packages/github_app:/packages/github_app:ro
+      - repo_clones:/tmp/codeworld_repos
+      - type: bind
+        source: ${GITHUB_APP_PRIVATE_KEY_HOST_PATH:-D:/codeworld-secrets/codeworld-dev-vlad.pem}
+        target: /run/secrets/github_app_private_key.pem
+        read_only: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: python -m arq worker.WorkerSettings
+
+volumes:
+  postgres_data:
+  redis_data:
+  repo_clones:

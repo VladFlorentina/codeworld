@@ -216,3 +216,39 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# ─── Node / Next.js ───────────────────────────────────────────
+node_modules/
+.next/
+out/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+.npm
+
+# ─── OS ───────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ─── IDE ──────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ─── CodeWorld specific ───────────────────────────────────────
+# Local environment secrets — NEVER commit
+.env
+.env.local
+.env.*.local
+
+# Temporary repository clones (outside Docker)
+/tmp/codeworld_repos/
+
+# Defensive rules for private keys & secrets
+*.pem
+secrets/
+codeworld-secrets/
+

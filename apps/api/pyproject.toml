@@ -1,0 +1,24 @@
+[build-system]
+# setuptools.build_meta is the correct PEP 517 build backend for setuptools.
+# pip imports this module directly when running `pip install -e .`
+# "setuptools.backends.legacy:build" does not exist — that was a mistake.
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "codeworld-api"
+version = "0.1.0"
+description = "CodeWorld API — FastAPI backend"
+requires-python = ">=3.12"
+
+# Runtime dependencies are kept in requirements.txt for Docker layer caching.
+# This file exists purely to register `app` as an installable package so
+# that alembic, pytest, and other tools can import it regardless of CWD.
+dependencies = []
+
+[tool.setuptools.packages.find]
+# Look for packages starting from the project root (".").
+# include = ["app*"] matches `app` and any subpackage like `app.models`,
+# `app.routers`, etc. No other packages are picked up.
+where = ["."]
+include = ["app*"]

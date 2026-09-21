@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "codeworld-github-app"
+version = "0.1.0"
+description = "CodeWorld shared GitHub App authentication and token management"
+requires-python = ">=3.12"
+dependencies = [
+    "cryptography>=42.0.0",
+    "pyjwt[crypto]>=2.9.0",
+    "httpx>=0.27.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["codeworld_github_app*"]
