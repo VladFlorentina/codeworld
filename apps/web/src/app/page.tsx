@@ -1,16 +1,11 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { getJobStatus, submitRepository } from "@/lib/api";
+import { useJobPolling } from "@/hooks/useJobPolling";
+import { submitRepository } from "@/lib/api";
 import { JobStatus } from "@/types/city";
-
-interface ActiveJob {
-  jobId: string;
-  repositoryId: string;
-  status: JobStatus;
-}
 
 const FEATURED_WORLDS = [
   {
@@ -34,23 +29,26 @@ export default function ExplorePage() {
 
   const [inputUrl, setInputUrl] = useState<string>("");
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
-  const [activeJob, setActiveJob] = useState<ActiveJob | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
-
-  const clearPolling = () => {
-    if (pollIntervalRef.current) {
-      clearInterval(pollIntervalRef.current);
-      pollIntervalRef.current = null;
-    }
-  };
-
-  useEffect(() => {
-    return () => {
-      clearPolling();
-    };
-  }, []);
+  const {
+    activeJob,
+    startPolling,
+    stopPolling,
+    clearActiveJob,
+  } = useJobPolling<{ repositoryId: string }>({
+    onComplete: (_job, meta) => {
+      router.push(`/city/${meta.repositoryId}`);
+    },
+    onFailed: (errorMsg) => {
+      setIsSubmitting(false);
+      setError(errorMsg);
+    },
+    onError: (err) => {
+      setIsSubmitting(false);
+      setError(`Status polling error: ${err.message}`);
+    },
+  });
 
   // Accepts "owner/repo" or full "https://github.com/owner/repo"
   const normalizeGithubUrl = (raw: string): string => {
@@ -82,7 +80,7 @@ export default function ExplorePage() {
     if (e) e.preventDefault();
 
     setError(null);
-    clearPolling();
+    stopPolling();
 
     const normalized = normalizeGithubUrl(inputUrl);
     if (!normalized) {
@@ -107,42 +105,15 @@ export default function ExplorePage() {
 
       if ((res.status === "analyzing" || res.status === "newly_queued") && res.job_id) {
         const initialStatus: JobStatus = res.status === "analyzing" ? "running" : "queued";
-        setActiveJob({
-          jobId: res.job_id,
+        startPolling(res.job_id, initialStatus, {
           repositoryId: res.repository_id,
-          status: initialStatus,
         });
-
-        pollIntervalRef.current = setInterval(async () => {
-          try {
-            const jobData = await getJobStatus(res.job_id!);
-            if (jobData.status === "complete") {
-              clearPolling();
-              router.push(`/city/${res.repository_id}`);
-            } else if (jobData.status === "failed") {
-              clearPolling();
-              setActiveJob(null);
-              setIsSubmitting(false);
-              setError(jobData.error || "Repository analysis failed. Please try again.");
-            } else {
-              setActiveJob((prev) =>
-                prev ? { ...prev, status: jobData.status } : null
-              );
-            }
-          } catch (pollErr: unknown) {
-            clearPolling();
-            setActiveJob(null);
-            setIsSubmitting(false);
-            const msg = pollErr instanceof Error ? pollErr.message : String(pollErr);
-            setError(`Status polling error: ${msg}`);
-          }
-        }, 2000);
       } else {
         throw new Error(res.message || "Unexpected response from server");
       }
     } catch (err: unknown) {
-      clearPolling();
-      setActiveJob(null);
+      stopPolling();
+      clearActiveJob();
       setIsSubmitting(false);
       const msg = err instanceof Error ? err.message : String(err);
       setError(msg);
@@ -152,8 +123,8 @@ export default function ExplorePage() {
   const handleRetry = () => {
     setError(null);
     setIsSubmitting(false);
-    setActiveJob(null);
-    clearPolling();
+    clearActiveJob();
+    stopPolling();
   };
 
   return (

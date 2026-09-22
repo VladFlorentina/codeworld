@@ -4,11 +4,11 @@ import React, { useState, useEffect, useRef, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
+import { useJobPolling } from "@/hooks/useJobPolling";
 import {
   getRepositories,
   getInstallations,
   analyzeGitHubRepository,
-  getJobStatus,
   getGitHubLoginUrl,
   ApiError,
 } from "@/lib/api";
@@ -27,33 +27,41 @@ export default function MyRepositoriesPage() {
 
   // Analysis / Polling state
   const [analyzingRepoId, setAnalyzingRepoId] = useState<number | null>(null);
-  const [activeJob, setActiveJob] = useState<{
-    repoId: number;
-    jobId: string;
-    status: JobStatus;
-    codeWorldRepoId: string;
-  } | null>(null);
   const [actionError, setActionError] = useState<{
     repoId: number;
     message: string;
   } | null>(null);
 
-  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const isAnalyzingRef = useRef<boolean>(false);
 
-  const clearPolling = () => {
-    isAnalyzingRef.current = false;
-    if (pollIntervalRef.current) {
-      clearInterval(pollIntervalRef.current);
-      pollIntervalRef.current = null;
-    }
-  };
-
-  useEffect(() => {
-    return () => {
-      clearPolling();
-    };
-  }, []);
+  const {
+    activeJob,
+    startPolling,
+    stopPolling,
+    clearActiveJob,
+  } = useJobPolling<{ repoId: number; codeWorldRepoId: string }>({
+    onComplete: (_job, meta) => {
+      isAnalyzingRef.current = false;
+      clearActiveJob();
+      router.push(`/city/${meta.codeWorldRepoId}`);
+    },
+    onFailed: (errorMsg, _job, meta) => {
+      isAnalyzingRef.current = false;
+      setAnalyzingRepoId(null);
+      setActionError({
+        repoId: meta.repoId,
+        message: errorMsg,
+      });
+    },
+    onError: (err, meta) => {
+      isAnalyzingRef.current = false;
+      setAnalyzingRepoId(null);
+      setActionError({
+        repoId: meta.repoId,
+        message: `Polling error: ${err.message}`,
+      });
+    },
+  });
 
   const loadRepositories = async () => {
     setLoadingData(true);
@@ -83,8 +91,8 @@ export default function MyRepositoriesPage() {
     } else {
       setRepositories([]);
       setInstallations([]);
-      clearPolling();
-      setActiveJob(null);
+      stopPolling();
+      clearActiveJob();
       setAnalyzingRepoId(null);
     }
   }, [status]);
@@ -95,8 +103,8 @@ export default function MyRepositoriesPage() {
     isAnalyzingRef.current = true;
 
     setActionError(null);
-    clearPolling();
-    isAnalyzingRef.current = true; // Maintain lock after clearPolling
+    stopPolling();
+    isAnalyzingRef.current = true; // Maintain lock after stopPolling
     setAnalyzingRepoId(repo.id);
 
     try {
@@ -106,67 +114,29 @@ export default function MyRepositoriesPage() {
       });
 
       if (res.status === "ready") {
-        clearPolling();
-        setActiveJob(null);
+        isAnalyzingRef.current = false;
+        stopPolling();
+        clearActiveJob();
         setAnalyzingRepoId(null);
         router.push(`/city/${res.repository_id}`);
         return;
       }
 
       if ((res.status === "analyzing" || res.status === "newly_queued") && res.job_id) {
+        isAnalyzingRef.current = false;
         const initialStatus: JobStatus = res.status === "analyzing" ? "running" : "queued";
-        setActiveJob({
+        setAnalyzingRepoId(null);
+        startPolling(res.job_id, initialStatus, {
           repoId: repo.id,
-          jobId: res.job_id,
-          status: initialStatus,
           codeWorldRepoId: res.repository_id,
         });
-        setAnalyzingRepoId(null);
-
-        pollIntervalRef.current = setInterval(async () => {
-          if (!pollIntervalRef.current) return;
-
-          try {
-            const jobData = await getJobStatus(res.job_id!);
-            if (!pollIntervalRef.current) return;
-
-            if (jobData.status === "complete") {
-              clearPolling();
-              setActiveJob(null);
-              router.push(`/city/${res.repository_id}`);
-            } else if (jobData.status === "failed") {
-              clearPolling();
-              setActiveJob(null);
-              setAnalyzingRepoId(null);
-              setActionError({
-                repoId: repo.id,
-                message: jobData.error || "Analysis job failed. Please try again.",
-              });
-            } else {
-              setActiveJob((prev) =>
-                prev && prev.jobId === res.job_id
-                  ? { ...prev, status: jobData.status }
-                  : prev
-              );
-            }
-          } catch (pollErr: unknown) {
-            if (!pollIntervalRef.current) return;
-            clearPolling();
-            setActiveJob(null);
-            setAnalyzingRepoId(null);
-            const msg = pollErr instanceof Error ? pollErr.message : String(pollErr);
-            setActionError({
-              repoId: repo.id,
-              message: `Polling error: ${msg}`,
-            });
-          }
-        }, 2000);
       } else {
         throw new Error(res.message || "Unexpected response from server");
       }
     } catch (err: unknown) {
-      clearPolling();
-      setActiveJob(null);
+      isAnalyzingRef.current = false;
+      stopPolling();
+      clearActiveJob();
       setAnalyzingRepoId(null);
       const msg = err instanceof Error ? err.message : String(err);
       setActionError({
