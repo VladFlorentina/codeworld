@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo } from "react";
+import React, { useMemo, useEffect } from "react";
 import { LayoutBuilding, LayoutDistrict } from "@/types/layout";
 import { getBuildingBaseElevation } from "@/lib/layout";
 
@@ -21,6 +21,12 @@ export default function Buildings({
   selectedBuildingId = null,
   onSelectBuilding,
 }: BuildingsProps) {
+  // Reset body cursor if component unmounts before onPointerOut fires
+  useEffect(() => {
+    return () => {
+      document.body.style.cursor = "default";
+    };
+  }, []);
   // Lookup map to get district depth for accurate vertical positioning
   const districtDepthMap = useMemo(() => {
     const map = new Map<string, number>();

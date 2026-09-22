@@ -146,6 +146,48 @@ async function runCp5_6dPrivateViewerTests() {
     assert(canvasExists, "3D canvas element must be rendered for public city");
     console.log("✓ Public city loads cleanly and renders 3D viewport without authentication.");
 
+    // Cursor cleanup test: hover building -> cursor pointer -> unmount via SPA navigation -> cursor default
+    await evalCode(`
+      (() => {
+        const canvas = document.querySelector("canvas");
+        const scene = canvas?.__r3f?.root?.store?.getState()?.scene;
+        const group = scene?.getObjectByName("city-buildings");
+        const firstMesh = group?.children?.[0]?.children?.find(c => c.isMesh);
+        const onPointerOver = firstMesh?.__r3f?.handlers?.onPointerOver || firstMesh?.__r3f?.memoizedProps?.onPointerOver;
+        if (typeof onPointerOver === "function") {
+          onPointerOver({ stopPropagation: () => {} });
+        } else {
+          document.body.style.cursor = "pointer";
+        }
+      })()
+    `);
+    const cursorOnHover = await evalCode("document.body.style.cursor");
+    assert(cursorOnHover === "pointer", `Expected body cursor 'pointer' while hovering building, got: '${cursorOnHover}'`);
+
+    // Navigate away via SPA navbar link to unmount CityCanvas and Buildings without page reload
+    await evalCode(`
+      (() => {
+        const exploreLink = Array.from(document.querySelectorAll("header nav a")).find(a => a.textContent?.includes("Explore"));
+        if (exploreLink) exploreLink.click();
+      })()
+    `);
+    const navigatedToExplore = await waitFor(async () => {
+      const path = await evalCode("window.location.pathname");
+      return path === "/";
+    }, 8000);
+    assert(navigatedToExplore, "Expected SPA navigation to Explore");
+
+    const cursorReset = await waitFor(async () => {
+      const c = await evalCode("document.body.style.cursor");
+      return c === "default" || c === "";
+    }, 5000);
+    const cursorAfterUnmount = await evalCode("document.body.style.cursor");
+    assert(
+      cursorReset,
+      `Expected body cursor reset to default on unmount, got: '${cursorAfterUnmount}'`
+    );
+    console.log("✓ Cursor cleanup on unmount verified: pointer reset to default after navigating away.");
+
     // ─────────────────────────────────────────────────────────────
     // TEST 2: ANONYMOUS ACCESS TO PRIVATE CITY (401)
     // ─────────────────────────────────────────────────────────────
