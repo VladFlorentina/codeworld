@@ -16,6 +16,7 @@ from codeworld_db import (
     Repository,
     RepositoryStatus,
     SyncType,
+    User,
 )
 
 __all__ = [
@@ -32,4 +33,5 @@ __all__ = [
     "District",
     "Building",
     "Connection",
+    "User",
 ]

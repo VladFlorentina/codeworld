@@ -1,85 +1,21 @@
-import asyncio
 import logging
-import uuid
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from arq import create_pool
-from arq.connections import RedisSettings
 
-from app.config import settings
 from app.database import get_db
 from app.schemas import SubmitRepositoryRequest, SubmitRepositoryResponse
 from app.services.repository_service import (
     authorize_repository_access,
     ensure_repository_analysis,
+    get_remote_head_commit,
+    parse_github_parts,
 )
-from codeworld_db import (
-    AnalysisRun,
-    AnalysisRunStatus,
-    City,
-    Repository,
-    RepositoryStatus,
-)
+from codeworld_db import Repository
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-
-def _parse_github_parts(url: str) -> tuple[str, str, str]:
-    """Extract (owner, repo_name, full_name) from validated github url."""
-    path = url.removeprefix("https://github.com/").strip("/")
-    parts = [p for p in path.split("/") if p]
-    owner, name = parts[0], parts[1]
-    return owner, name, f"{owner}/{name}"
-
-
-async def _get_remote_head_commit(clone_url: str, timeout_seconds: float = 5.0) -> str | None:
-    """Resolve HEAD commit SHA using git ls-remote without cloning."""
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            "git",
-            "ls-remote",
-            clone_url,
-            "HEAD",
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout_seconds)
-        if proc.returncode != 0:
-            logger.warning(
-                "git ls-remote failed",
-                extra={
-                    "clone_url": clone_url,
-                    "returncode": proc.returncode,
-                    "stderr": stderr.decode().strip(),
-                },
-            )
-            return None
-        output = stdout.decode().strip()
-        if not output:
-            return None
-        # Format of stdout: "<40-hex-sha>\tHEAD"
-        sha = output.split()[0]
-        if len(sha) == 40 and all(c in "0123456789abcdefABCDEF" for c in sha):
-            return sha.lower()
-        return None
-    except asyncio.TimeoutError:
-        logger.error("git ls-remote timed out", extra={"clone_url": clone_url, "timeout": timeout_seconds})
-        raise HTTPException(
-            status_code=504,
-            detail="Timeout resolving GitHub repository HEAD commit. Please try again.",
-        )
-    except HTTPException:
-        raise
-    except Exception as exc:
-        logger.error("git ls-remote unexpected error", extra={"clone_url": clone_url, "error": str(exc)})
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to inspect GitHub repository: {str(exc)}",
-        )
 
 
 @router.post("/repositories", response_model=SubmitRepositoryResponse)
@@ -88,9 +24,9 @@ async def submit_repository(
     response: Response,
     db: AsyncSession = Depends(get_db),
 ) -> SubmitRepositoryResponse:
-    owner, name, full_name = _parse_github_parts(body.url)
+    owner, name, full_name = parse_github_parts(body.url)
 
-    current_head_sha = await _get_remote_head_commit(body.url)
+    current_head_sha = await get_remote_head_commit(body.url)
     if not current_head_sha:
         raise HTTPException(
             status_code=404,

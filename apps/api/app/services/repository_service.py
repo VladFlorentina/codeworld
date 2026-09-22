@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from typing import Any
@@ -26,6 +27,60 @@ from codeworld_db import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def parse_github_parts(url: str) -> tuple[str, str, str]:
+    """Extract (owner, repo_name, full_name) from validated github url."""
+    path = url.removeprefix("https://github.com/").strip("/")
+    parts = [p for p in path.split("/") if p]
+    owner, name = parts[0], parts[1]
+    return owner, name, f"{owner}/{name}"
+
+
+async def get_remote_head_commit(clone_url: str, timeout_seconds: float = 5.0) -> str | None:
+    """Resolve HEAD commit SHA using git ls-remote without cloning."""
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "git",
+            "ls-remote",
+            clone_url,
+            "HEAD",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout_seconds)
+        if proc.returncode != 0:
+            logger.warning(
+                "git ls-remote failed",
+                extra={
+                    "clone_url": clone_url,
+                    "returncode": proc.returncode,
+                    "stderr": stderr.decode().strip(),
+                },
+            )
+            return None
+        output = stdout.decode().strip()
+        if not output:
+            return None
+        # Format of stdout: "<40-hex-sha>\tHEAD"
+        sha = output.split()[0]
+        if len(sha) == 40 and all(c in "0123456789abcdefABCDEF" for c in sha):
+            return sha.lower()
+        return None
+    except asyncio.TimeoutError:
+        logger.error("git ls-remote timed out", extra={"clone_url": clone_url, "timeout": timeout_seconds})
+        raise HTTPException(
+            status_code=504,
+            detail="Timeout resolving GitHub repository HEAD commit. Please try again.",
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("git ls-remote unexpected error", extra={"clone_url": clone_url, "error": str(exc)})
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to inspect GitHub repository: {str(exc)}",
+        )
 
 
 async def authorize_repository_access(

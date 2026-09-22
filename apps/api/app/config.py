@@ -36,7 +36,6 @@ class Settings(BaseSettings):
     github_app_id: str | None = None
     github_app_client_id: str | None = None
     github_app_client_secret: str | None = None
-    github_app_private_key: str | None = None
     github_app_private_key_path: str | None = None
     github_app_slug: str | None = None
     token_encryption_key: str | None = None
