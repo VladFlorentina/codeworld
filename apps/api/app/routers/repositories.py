@@ -37,13 +37,7 @@ def _parse_github_parts(url: str) -> tuple[str, str, str]:
 
 
 async def _get_remote_head_commit(clone_url: str, timeout_seconds: float = 5.0) -> str | None:
-    """
-    Resolve HEAD commit SHA using `git ls-remote <url> HEAD` without cloning.
-
-    Runs via asyncio.create_subprocess_exec (no shell).
-    Times out strictly after timeout_seconds, raising HTTP 504.
-    Returns None if repository does not exist or is private (non-zero exit code).
-    """
+    """Resolve HEAD commit SHA using git ls-remote without cloning."""
     try:
         proc = await asyncio.create_subprocess_exec(
             "git",
@@ -94,23 +88,8 @@ async def submit_repository(
     response: Response,
     db: AsyncSession = Depends(get_db),
 ) -> SubmitRepositoryResponse:
-    """
-    Ensure world operation for a GitHub repository.
-
-    Flow:
-      1. Resolves current HEAD commit SHA via `git ls-remote` (async + timeout).
-      2. Gets or creates Repository (handling concurrent insertion via uq_repository_full_name).
-      3. Checks if a complete City already exists for (repository + current_head_sha):
-         -> return 200 with status="ready" (instant reuse).
-      4. Checks if an active AnalysisRun (queued/running) exists for (repository + current_head_sha):
-         -> return 202 with status="analyzing" (reuse in-flight operation).
-      5. Otherwise, creates a new AnalysisRun with commit_sha populated immediately,
-         commits to PostgreSQL, and enqueues to ARQ Redis:
-         -> return 202 with status="newly_queued".
-    """
     owner, name, full_name = _parse_github_parts(body.url)
 
-    # 1. Resolve current HEAD commit SHA
     current_head_sha = await _get_remote_head_commit(body.url)
     if not current_head_sha:
         raise HTTPException(
@@ -118,7 +97,6 @@ async def submit_repository(
             detail=f"GitHub repository not found or is inaccessible: {body.url}. Please verify the URL or ensure the repository is public.",
         )
 
-    # 2. Delegate to unified ensure_repository_analysis
     resp_code, result = await ensure_repository_analysis(
         db=db,
         owner=owner,
@@ -138,7 +116,6 @@ async def get_repository(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ):
-    """Get the status and metadata of a repository."""
     stmt = select(Repository).where(Repository.id == repository_id)
     res = await db.execute(stmt)
     repo = res.scalar_one_or_none()

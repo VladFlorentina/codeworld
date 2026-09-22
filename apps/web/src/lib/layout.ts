@@ -15,7 +15,6 @@ export const LAYOUT_CONFIG = {
   DISTRICT_GAP: 3.0,
   MIN_DISTRICT_WIDTH: 6.0,
   MIN_DISTRICT_DEPTH: 6.0,
-  // 3D elevation constants (single source of truth)
   PLATE_THICKNESS: 0.12,
   ELEVATION_STEP: 0.06,
 };
@@ -97,7 +96,6 @@ export function computeCityLayout(city: CityDTO): LayoutCity {
     };
   }
 
-  // Build lookup structures
   const districtsById = new Map<string, DistrictDTO>();
   for (const d of sortedDistricts) {
     districtsById.set(d.id, d);
@@ -125,7 +123,6 @@ export function computeCityLayout(city: CityDTO): LayoutCity {
     list.sort((a, b) => a.path.localeCompare(b.path));
   }
 
-  // Recursive bottom-up district layout
   function layoutDistrictNode(district: DistrictDTO): DistrictLayoutNode {
     const childDistricts = childrenByParent.get(district.id) || [];
     const childNodes = childDistricts.map((cd) => layoutDistrictNode(cd));
@@ -297,14 +294,13 @@ export function computeCityLayout(city: CityDTO): LayoutCity {
     };
   }
 
-  // Find root districts (usually single root at path: "")
   const rootDistricts = sortedDistricts.filter(
     (d) => d.parent_id === null || !districtsById.has(d.parent_id)
   );
 
   const rootNodes = rootDistricts.map((rd) => layoutDistrictNode(rd));
 
-  // If multiple top-level roots exist, arrange them along X with DISTRICT_GAP
+  // Arrange multiple top-level roots along X with DISTRICT_GAP
   let currentRootX = 0;
   for (const rn of rootNodes) {
     rn.localX = currentRootX;
@@ -312,7 +308,6 @@ export function computeCityLayout(city: CityDTO): LayoutCity {
     currentRootX += rn.width + LAYOUT_CONFIG.DISTRICT_GAP;
   }
 
-  // Top-down pass: compute world coordinates for all districts and buildings
   const layoutDistricts: LayoutDistrict[] = [];
   const layoutBuildings: LayoutBuilding[] = [];
 
@@ -377,7 +372,6 @@ export function computeCityLayout(city: CityDTO): LayoutCity {
     resolveWorldCoordinates(rn, 0, 0);
   }
 
-  // Connections
   const buildingMap = new Map<string, LayoutBuilding>();
   for (const b of layoutBuildings) {
     buildingMap.set(b.id, b);
@@ -420,7 +414,6 @@ export function computeCityLayout(city: CityDTO): LayoutCity {
   layoutBuildings.sort((a, b) => a.path.localeCompare(b.path));
   layoutConnections.sort((a, b) => a.id.localeCompare(b.id));
 
-  // Compute total layout bounds
   let minX = 0;
   let maxX = 0;
   let minZ = 0;

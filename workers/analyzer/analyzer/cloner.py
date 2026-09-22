@@ -1,25 +1,4 @@
-"""
-Repository cloning for the CodeWorld analysis pipeline.
-
-Security considerations (treating repository contents as untrusted):
-  - Clone into a controlled base directory with a random UUID subdirectory.
-    This prevents any possibility of path collisions between concurrent jobs.
-  - Shallow clone (--depth=1) fetches only the latest commit.
-    This is faster and avoids downloading the full history (Phase 7 will
-    fetch history incrementally only when needed).
-  - We record the HEAD commit SHA immediately after cloning.
-    This SHA ties the analysis run to an exact point in time.
-  - If cloning fails, we clean up the partial clone directory.
-  - We enforce a size limit AFTER cloning. Git does not expose the final
-    uncompressed size before cloning, so we check after the fact and
-    abort if the clone is too large.
-  - Never follow symlinks outside the clone root (handled by discovery.py).
-
-Why GitPython?
-  It wraps the system git binary, so we get full git compatibility without
-  reimplementing any git protocol. For cloning a public repository, it is
-  the simplest correct choice.
-"""
+"""Repository cloning for the CodeWorld analysis pipeline."""
 from __future__ import annotations
 
 import logging
@@ -33,14 +12,9 @@ from git import Repo
 
 logger = logging.getLogger(__name__)
 
-# Default base directory for clones. Overridden by the
-# GITHUB_CLONE_BASE_DIR environment variable in the worker.
 DEFAULT_CLONE_BASE = Path(
     os.getenv("GITHUB_CLONE_BASE_DIR", "/tmp/codeworld_repos")
 )
-
-# Maximum repository size on disk after cloning (bytes).
-# Default: 500 MB. Overridden by MAX_REPO_SIZE_MB env var.
 MAX_CLONE_SIZE_BYTES = int(os.getenv("MAX_REPO_SIZE_MB", "500")) * 1024 * 1024
 
 
@@ -153,9 +127,9 @@ def clone_repository(
                 url,
                 clone_path,
                 env=clone_env,
-                depth=1,                      # shallow — only latest commit
-                single_branch=True,           # only default branch
-                no_tags=True,                 # skip tag objects (saves bandwidth)
+                depth=1,
+                single_branch=True,
+                no_tags=True,
             )
         except (git.GitCommandError, Exception) as exc:
             clean_stderr = getattr(exc, "stderr", None)
@@ -167,7 +141,6 @@ def clone_repository(
                 f"git clone failed for {url}: {clean_stderr}"
             ) from exc
 
-        # ── Commit SHA Verification & Strict Checkout ─────────────
         try:
             cloned_sha = repo.head.commit.hexsha
         except Exception:
@@ -183,7 +156,6 @@ def clone_repository(
                 },
             )
             try:
-                # Fetch expected commit with depth=1 using authenticated environment
                 repo.git.fetch("origin", expected_commit_sha, depth=1, env=clone_env)
                 repo.git.checkout(expected_commit_sha)
             except (git.GitCommandError, Exception) as exc:
@@ -196,7 +168,6 @@ def clone_repository(
                     f"Failed to fetch/checkout expected commit {expected_commit_sha} for {url}: {clean_stderr}"
                 ) from exc
 
-        # Verify actual HEAD == expected SHA
         try:
             actual_sha = repo.head.commit.hexsha
         except Exception:
@@ -207,9 +178,7 @@ def clone_repository(
                 f"Post-checkout HEAD mismatch for {url}: expected {expected_commit_sha}, got {actual_sha}"
             )
 
-        # ── Size check ────────────────────────────────────────────
-        # We check after cloning and checkout because git does not expose uncompressed size
-        # before the clone. If too large, we delete and abort.
+        # Verify disk size limit after shallow checkout
         size_bytes = _directory_size(clone_path)
         if size_bytes > MAX_CLONE_SIZE_BYTES:
             size_mb = size_bytes / (1024 * 1024)

@@ -33,16 +33,7 @@ def _get_fernet(key: str | None = None) -> Fernet:
 
 
 def encrypt_token(token: str, key: str | None = None) -> str:
-    """
-    Encrypt a plaintext token using Fernet symmetric encryption.
-
-    Args:
-        token: Plaintext token string.
-        key: Optional explicit key for testing or overriding settings.
-
-    Returns:
-        Encrypted token ciphertext as a string.
-    """
+    """Encrypt a plaintext token using Fernet symmetric encryption."""
     if not token:
         raise ValueError("Cannot encrypt an empty token.")
 
@@ -52,16 +43,7 @@ def encrypt_token(token: str, key: str | None = None) -> str:
 
 
 def decrypt_token(cipher_text: str, key: str | None = None) -> str:
-    """
-    Decrypt a Fernet ciphertext back to its original plaintext token string.
-
-    Args:
-        cipher_text: Encrypted token string.
-        key: Optional explicit key for testing or overriding settings.
-
-    Returns:
-        Decrypted plaintext token string.
-    """
+    """Decrypt a Fernet ciphertext back to its plaintext token."""
     if not cipher_text:
         raise ValueError("Cannot decrypt empty ciphertext.")
 

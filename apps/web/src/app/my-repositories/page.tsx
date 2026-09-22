@@ -106,7 +106,6 @@ export default function MyRepositoriesPage() {
       });
 
       if (res.status === "ready") {
-        // City is ready immediately: navigate directly to CodeWorld repository UUID
         clearPolling();
         setActiveJob(null);
         setAnalyzingRepoId(null);
@@ -124,9 +123,7 @@ export default function MyRepositoriesPage() {
         });
         setAnalyzingRepoId(null);
 
-        // Polling interval every 2000ms
         pollIntervalRef.current = setInterval(async () => {
-          // Guard: if timer was cleared while request was inflight, do nothing
           if (!pollIntervalRef.current) return;
 
           try {
@@ -190,9 +187,6 @@ export default function MyRepositoriesPage() {
     );
   }, [repositories, searchQuery]);
 
-  // ─────────────────────────────────────────────────────────────
-  // STATE 1: UNAUTHENTICATED
-  // ─────────────────────────────────────────────────────────────
   if (status === "unauthenticated") {
     return (
       <main className="relative flex min-h-[calc(100vh-3.5rem)] flex-col items-center justify-center bg-[#0a0f1d] px-6 py-12 text-white">
@@ -236,9 +230,6 @@ export default function MyRepositoriesPage() {
     );
   }
 
-  // ─────────────────────────────────────────────────────────────
-  // LOADING SKELETON
-  // ─────────────────────────────────────────────────────────────
   if (status === "loading") {
     return (
       <main className="min-h-[calc(100vh-3.5rem)] bg-[#0a0f1d] px-6 py-10 text-white">
@@ -255,9 +246,6 @@ export default function MyRepositoriesPage() {
     );
   }
 
-  // ─────────────────────────────────────────────────────────────
-  // STATE 4: SESSION EXPIRED OR FETCH ERROR
-  // ─────────────────────────────────────────────────────────────
   if (fetchError || authError) {
     return (
       <main className="relative flex min-h-[calc(100vh-3.5rem)] flex-col items-center justify-center bg-[#0a0f1d] px-6 py-12 text-white">
@@ -293,9 +281,6 @@ export default function MyRepositoriesPage() {
     );
   }
 
-  // ─────────────────────────────────────────────────────────────
-  // STATE 2A: AUTHENTICATED, ZERO INSTALLATIONS
-  // ─────────────────────────────────────────────────────────────
   if (!loadingData && installations.length === 0) {
     return (
       <main className="min-h-[calc(100vh-3.5rem)] bg-[#0a0f1d] px-6 py-12 text-white">
@@ -342,9 +327,6 @@ export default function MyRepositoriesPage() {
     );
   }
 
-  // ─────────────────────────────────────────────────────────────
-  // STATE 2B: AUTHENTICATED, INSTALLATION EXISTS BUT ZERO REPOSITORIES
-  // ─────────────────────────────────────────────────────────────
   if (!loadingData && installations.length > 0 && repositories.length === 0) {
     return (
       <main className="min-h-[calc(100vh-3.5rem)] bg-[#0a0f1d] px-6 py-12 text-white">
@@ -388,13 +370,9 @@ export default function MyRepositoriesPage() {
     );
   }
 
-  // ─────────────────────────────────────────────────────────────
-  // STATE 3: AUTHENTICATED, REPOSITORIES AVAILABLE
-  // ─────────────────────────────────────────────────────────────
   return (
     <main className="min-h-[calc(100vh-3.5rem)] bg-[#0a0f1d] px-4 py-8 text-white sm:px-6 lg:px-8">
       <div className="mx-auto max-w-6xl">
-        {/* Header section */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-neutral-800/80 pb-6">
           <div>
             <div className="flex items-center gap-2">
@@ -447,7 +425,6 @@ export default function MyRepositoriesPage() {
           </div>
         </div>
 
-        {/* Filter & search bar */}
         <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="relative w-full max-w-sm">
             <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-neutral-500">
@@ -470,7 +447,6 @@ export default function MyRepositoriesPage() {
           </div>
         </div>
 
-        {/* Global error banner if action failed */}
         {actionError && (
           <div className="mt-4 flex items-center justify-between rounded-lg border border-red-900/60 bg-red-950/40 px-4 py-2.5 text-xs text-red-300">
             <span>{actionError.message}</span>
@@ -483,7 +459,6 @@ export default function MyRepositoriesPage() {
           </div>
         )}
 
-        {/* Repositories grid */}
         <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {filteredRepositories.map((repo) => {
             const isProcessingThis =
@@ -502,9 +477,7 @@ export default function MyRepositoriesPage() {
                 }`}
               >
                 <div>
-                  {/* Top badges */}
                   <div className="flex items-center justify-between gap-2">
-                    {/* Visibility badge */}
                     {repo.private ? (
                       <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-mono font-medium text-amber-400">
                         <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -524,13 +497,11 @@ export default function MyRepositoriesPage() {
                       </span>
                     )}
 
-                    {/* Default branch badge */}
                     <span className="rounded border border-neutral-800 bg-neutral-900/80 px-1.5 py-0.5 text-[10px] font-mono text-neutral-400">
                       {repo.default_branch || "main"}
                     </span>
                   </div>
 
-                  {/* Repository title */}
                   <div className="mt-3">
                     <h2
                       title={repo.full_name}
@@ -541,7 +512,6 @@ export default function MyRepositoriesPage() {
                   </div>
                 </div>
 
-                {/* Bottom action controls */}
                 <div className="mt-5 flex items-center justify-between gap-3 border-t border-neutral-850 pt-4">
                   <a
                     href={repo.html_url}
@@ -557,7 +527,6 @@ export default function MyRepositoriesPage() {
                     </svg>
                   </a>
 
-                  {/* Action button */}
                   {isProcessingThis ? (
                     <div className="flex items-center gap-2">
                       <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-emerald-400 border-t-transparent" />
@@ -607,7 +576,6 @@ export default function MyRepositoriesPage() {
           })}
         </div>
 
-        {/* Empty filter message */}
         {filteredRepositories.length === 0 && repositories.length > 0 && (
           <div className="mt-12 text-center text-xs font-mono text-neutral-500">
             No repositories matching &quot;{searchQuery}&quot;.

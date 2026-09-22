@@ -1,14 +1,4 @@
-"""
-World generator: transforms repository analysis results into CityDTO.
-
-Responsibilities:
-  - Construct a hierarchical district tree (DistrictDTO) matching repository directories.
-  - Map files to buildings (BuildingDTO) with 1:1 raw metrics preserved.
-  - Map internal dependency edges to connections (ConnectionDTO) between building IDs.
-  - Generate deterministic, collision-proof identifiers using UUID5 derived from paths.
-  - Aggregate repository-level summary metrics (CitySummaryDTO).
-  - Do NOT calculate 3D layout, spatial coordinates, or visual dimensions.
-"""
+"""Transforms repository analysis results into CityDTO."""
 from __future__ import annotations
 
 import os
@@ -23,10 +13,6 @@ from analyzer.models import FileAnalysis, FileInfo
 # Fixed DNS namespace for CodeWorld deterministic UUID5 generation
 CODEWORLD_NAMESPACE = uuid.uuid5(uuid.NAMESPACE_DNS, "codeworld.dev")
 
-
-# ─────────────────────────────────────────────────────────────
-# Deterministic ID Helpers
-# ─────────────────────────────────────────────────────────────
 
 def make_district_id(dir_path: str, scope: str = "") -> str:
     """Deterministic UUID5 for a directory path, optionally scoped to a run/city."""
@@ -50,10 +36,6 @@ def make_connection_id(source_path: str, target_path: str, scope: str = "") -> s
     return str(uuid.uuid5(CODEWORLD_NAMESPACE, token))
 
 
-# ─────────────────────────────────────────────────────────────
-# DTO Definitions
-# ─────────────────────────────────────────────────────────────
-
 @dataclass
 class BuildingMetricsDTO:
     loc_total: int
@@ -70,31 +52,31 @@ class BuildingMetricsDTO:
 
 @dataclass
 class BuildingDTO:
-    id: str                   # Deterministic uuid5
-    district_id: str          # Deterministic uuid5 of parent district
-    name: str                 # Filename, e.g. "routing.py"
-    path: str                 # Full relative path, e.g. "fastapi/routing.py"
-    language: str | None      # "Python", "TypeScript", etc.
-    color_hex: str            # Linguist color, e.g. "#3572A5"
+    id: str
+    district_id: str
+    name: str
+    path: str
+    language: str | None
+    color_hex: str
     metrics: BuildingMetricsDTO
 
 
 @dataclass
 class DistrictDTO:
-    id: str                   # Deterministic uuid5
-    path: str                 # Directory path, "" for root, "fastapi/routing"
-    name: str                 # Directory name, "root", "routing"
-    parent_id: str | None     # None for root, parent district uuid5 otherwise
-    depth: int                # 0 for root, 1, 2, ...
+    id: str
+    path: str
+    name: str
+    parent_id: str | None
+    depth: int
 
 
 @dataclass
 class ConnectionDTO:
-    id: str                   # Deterministic uuid5
-    source_building_id: str   # UUID5 of importing building
-    target_building_id: str   # UUID5 of imported building
-    connection_type: str      # "import"
-    is_circular: bool         # True if part of a strongly connected cycle
+    id: str
+    source_building_id: str
+    target_building_id: str
+    connection_type: str
+    is_circular: bool
 
 
 @dataclass
@@ -103,7 +85,7 @@ class CitySummaryDTO:
     total_loc_code: int
     total_complexity: int
     languages: dict[str, int]
-    circular_dependency_count: int  # Strict count of circular groups (SCC > 1)
+    circular_dependency_count: int
 
 
 @dataclass
@@ -115,10 +97,6 @@ class CityDTO:
     buildings: list[BuildingDTO]
     connections: list[ConnectionDTO]
 
-
-# ─────────────────────────────────────────────────────────────
-# District Hierarchy Builder
-# ─────────────────────────────────────────────────────────────
 
 def _build_district_hierarchy(file_paths: list[str], scope: str = "") -> list[DistrictDTO]:
     """

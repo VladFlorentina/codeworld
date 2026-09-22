@@ -85,7 +85,6 @@ async def github_login():
     code_verifier = generate_code_verifier(64)
     code_challenge = generate_code_challenge(code_verifier)
 
-    # Encode state and verifier into signed JWT cookie (10 min TTL)
     pkce_token = create_pkce_state_cookie_value(
         state=state,
         code_verifier=code_verifier,
@@ -122,18 +121,9 @@ async def github_callback(
     error_description: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Handles the GitHub App OAuth callback:
-    1. Validates code, state, and matches state with the signed temporary cookie.
-    2. Deletes the temporary PKCE cookie regardless of outcome.
-    3. Exchanges authorization code using PKCE code_verifier.
-    4. Fetches user profile using numeric github_user_id.
-    5. Upserts User record with encrypted access and refresh tokens.
-    6. Sets CodeWorld signed session cookie and redirects to /my-repositories.
-    """
+    """Handle GitHub App OAuth callback with PKCE verification and user session creation."""
     pkce_cookie = request.cookies.get(settings.oauth_pkce_cookie_name)
 
-    # If GitHub sent an authorization error
     if error:
         err_msg = error_description or error
         logger.warning("GitHub OAuth callback received error: %s", err_msg)
@@ -144,7 +134,6 @@ async def github_callback(
         _delete_pkce_cookie(resp)
         return resp
 
-    # Validate parameters
     if not code or not state:
         resp = JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -153,7 +142,6 @@ async def github_callback(
         _delete_pkce_cookie(resp)
         return resp
 
-    # Validate signed PKCE cookie
     try:
         pkce_data = verify_pkce_state_cookie_value(pkce_cookie)
     except ValueError as exc:
@@ -176,7 +164,6 @@ async def github_callback(
 
     code_verifier = pkce_data["verifier"]
 
-    # Exchange code + verifier for tokens
     try:
         token_data = await exchange_code_for_user_token(code=code, code_verifier=code_verifier)
     except Exception as exc:
@@ -193,7 +180,6 @@ async def github_callback(
     expires_in = token_data.get("expires_in")
     refresh_token_expires_in = token_data.get("refresh_token_expires_in")
 
-    # Fetch GitHub user profile
     try:
         user_profile = await fetch_github_user_profile(access_token)
     except Exception as exc:
@@ -215,11 +201,10 @@ async def github_callback(
         now + timedelta(seconds=int(refresh_token_expires_in)) if refresh_token_expires_in else None
     )
 
-    # Encrypt tokens before DB insertion
     enc_access = encrypt_token(access_token)
     enc_refresh = encrypt_token(refresh_token) if refresh_token else None
 
-    # Upsert User based on stable numeric github_user_id
+    # Upsert by numeric GitHub ID to preserve identity across username changes
     stmt = select(User).where(User.github_user_id == github_user_id)
     result = await db.execute(stmt)
     user = result.scalars().first()
@@ -250,17 +235,13 @@ async def github_callback(
     await db.commit()
     await db.refresh(user)
 
-    # Create session cookie
     session_token = create_session_cookie_value(
         user_id=user.id,
         max_age=settings.session_max_age_seconds,
     )
 
-    # Redirect to frontend
     redirect_target = settings.auth_success_redirect_url
     response = RedirectResponse(url=redirect_target, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
-
-    # Set CodeWorld session cookie
     response.set_cookie(
         key=settings.session_cookie_name,
         value=session_token,
@@ -271,7 +252,6 @@ async def github_callback(
         path="/",
     )
 
-    # Clean up temporary PKCE cookie
     _delete_pkce_cookie(response)
     return response
 

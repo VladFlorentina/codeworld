@@ -15,8 +15,6 @@ def generate_code_verifier(length: int = 64) -> str:
     """
     if not (43 <= length <= 128):
         raise ValueError("PKCE code_verifier length must be between 43 and 128 characters.")
-    # secrets.token_urlsafe generates urlsafe base64 without padding
-    # token_urlsafe(nbytes) returns ~1.33 * nbytes characters
     token = secrets.token_urlsafe(length)
     return token[:length]
 

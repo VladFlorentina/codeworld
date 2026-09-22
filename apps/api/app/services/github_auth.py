@@ -197,7 +197,6 @@ async def get_valid_user_access_token(
     """
     now = datetime.now(timezone.utc)
 
-    # Check if access token is still valid (with 60-second buffer)
     if user.user_token_expires_at is None or user.user_token_expires_at > now + timedelta(seconds=60):
         try:
             return decrypt_token(user.encrypted_user_access_token)
@@ -205,7 +204,6 @@ async def get_valid_user_access_token(
             logger.error("Failed to decrypt stored access token for user %s: %s", user.id, exc)
             raise AuthenticationRequiredException("Failed to decrypt access token. Re-authentication required.") from exc
 
-    # Access token is expired: attempt refresh
     logger.info("Access token expired for user %s (%s). Attempting refresh.", user.id, user.github_login)
     if not user.encrypted_refresh_token:
         raise AuthenticationRequiredException("Access token expired and no refresh token is stored.")
@@ -219,7 +217,6 @@ async def get_valid_user_access_token(
         logger.error("Failed to decrypt stored refresh token for user %s: %s", user.id, exc)
         raise AuthenticationRequiredException("Corrupted refresh token. Re-authentication required.") from exc
 
-    # Perform GitHub refresh request
     refresh_data = await refresh_github_user_token(plain_refresh_token, client=http_client)
 
     new_access_token = refresh_data["access_token"]
@@ -227,10 +224,9 @@ async def get_valid_user_access_token(
     expires_in = refresh_data.get("expires_in")
     refresh_expires_in = refresh_data.get("refresh_token_expires_in")
 
-    # Encrypt new credentials
     user.encrypted_user_access_token = encrypt_token(new_access_token)
     if new_refresh_token:
-        # Crucial: GitHub rotates refresh token on each refresh. Never keep old refresh token.
+        # GitHub rotates refresh token on each refresh
         user.encrypted_refresh_token = encrypt_token(new_refresh_token)
 
     if expires_in:
@@ -240,7 +236,6 @@ async def get_valid_user_access_token(
 
     user.updated_at = now
 
-    # Persist atomically in single transaction
     await db.commit()
     await db.refresh(user)
 

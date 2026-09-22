@@ -40,7 +40,6 @@ export default function Buildings({
 
         return (
           <group key={b.id} position={[b.x, centerY, b.z]}>
-            {/* Primary Building Mesh */}
             <mesh
               castShadow
               receiveShadow
@@ -66,7 +65,6 @@ export default function Buildings({
               />
             </mesh>
 
-            {/* Reversible Selection Wireframe Cage (clean highlight without post-processing) */}
             {isSelected && (
               <mesh>
                 <boxGeometry args={[b.width + 0.15, b.height + 0.15, b.depth + 0.15]} />

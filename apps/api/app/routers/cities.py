@@ -30,24 +30,11 @@ async def get_city(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Get the completed CityDTO for a repository.
-
-    Reconstructs the hierarchical city representation (districts, buildings
-    with raw metrics, connections, and summary) directly from PostgreSQL.
-
-    Security:
-      - Public repositories (is_private=False) are accessible anonymously.
-      - Private repositories (is_private=True) require an active CodeWorld session
-        and live verification via GitHub App that the user has access to the
-        numeric github_repository_id.
-    """
-    # 1. Fetch Repository
+    """Get the completed CityDTO for a repository with access authorization."""
     repo = await db.get(Repository, repository_id)
     if not repo:
         raise HTTPException(status_code=404, detail="Repository not found")
 
-    # 2. Authorization check for private repositories
     await authorize_repository_access(repo, request, db)
 
     if repo.status in (RepositoryStatus.pending, RepositoryStatus.analyzing):
@@ -55,7 +42,6 @@ async def get_city(
     if repo.status == RepositoryStatus.failed:
         raise HTTPException(status_code=400, detail="Repository analysis failed")
 
-    # 2. Fetch latest completed City
     stmt_city = (
         select(City)
         .join(AnalysisRun, City.run_id == AnalysisRun.id)
@@ -70,11 +56,9 @@ async def get_city(
     if not city:
         raise HTTPException(status_code=404, detail="No completed city found for this repository")
 
-    # 3. Fetch AnalysisRun for summary metadata
     run = await db.get(AnalysisRun, city.run_id)
     summary_data = run.analysis_meta.get("summary") if run and run.analysis_meta else {}
 
-    # 4. Fetch Districts
     stmt_d = select(District).where(District.city_id == city.id).order_by(District.depth, District.path)
     res_d = await db.execute(stmt_d)
     districts = [
@@ -88,7 +72,6 @@ async def get_city(
         for d in res_d.scalars().all()
     ]
 
-    # 5. Fetch Buildings joined with FileRecords for raw metrics
     stmt_b = (
         select(Building, FileRecord)
         .join(FileRecord, Building.file_record_id == FileRecord.id)
@@ -120,7 +103,6 @@ async def get_city(
             },
         })
 
-    # 6. Fetch Connections
     stmt_c = select(Connection).where(Connection.city_id == city.id)
     res_c = await db.execute(stmt_c)
     connections = [

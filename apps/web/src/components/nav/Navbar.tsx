@@ -15,7 +15,6 @@ export default function Navbar() {
 
   return (
     <header className="sticky top-0 z-50 flex h-14 w-full shrink-0 items-center justify-between border-b border-neutral-800/80 bg-[#0a0f1d]/90 px-4 backdrop-blur-md sm:px-6">
-      {/* Brand & Nav */}
       <div className="flex items-center gap-6">
         <Link href="/" className="group flex items-center gap-2.5">
           <span className="flex h-7 w-7 items-center justify-center rounded-md bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 group-hover:border-emerald-400/60 transition-colors">
@@ -37,7 +36,6 @@ export default function Navbar() {
           </span>
         </Link>
 
-        {/* Primary Nav Links */}
         <nav className="flex items-center gap-1">
           <Link
             href="/"
@@ -62,7 +60,6 @@ export default function Navbar() {
         </nav>
       </div>
 
-      {/* Auth Actions */}
       <div className="flex items-center gap-3">
         {status === "loading" && (
           <div className="h-7 w-28 animate-pulse rounded-full bg-neutral-800/50" />

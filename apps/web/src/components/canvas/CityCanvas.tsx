@@ -47,12 +47,10 @@ export default function CityCanvas({
 }: CityCanvasProps) {
   const { bounds, districts, buildings } = layout;
 
-  // Calculate center and maximum horizontal dimension from layout.bounds
   const centerX = (bounds.minX + bounds.maxX) / 2;
   const centerZ = (bounds.minZ + bounds.maxZ) / 2;
   const maxDim = Math.max(bounds.width, bounds.depth, 20);
 
-  // Dynamic camera position: elevated isometric diagonal perspective
   const cameraPosition = useMemo<[number, number, number]>(() => {
     return [
       centerX + maxDim * 0.65,
@@ -78,11 +76,9 @@ export default function CityCanvas({
         onPointerMissed={() => onSelectBuilding?.(null)}
         className="w-full h-full"
       >
-        {/* Deep Slate Background & Depth Fog */}
         <color attach="background" args={["#0a0f1d"]} />
         <fog attach="fog" args={["#0a0f1d", maxDim * 1.5, maxDim * 4]} />
 
-        {/* Illumination: Ambient + Balanced Directional Lights */}
         <ambientLight intensity={0.7} />
         <directionalLight
           position={[centerX + maxDim * 0.5, maxDim * 1.2, centerZ + maxDim * 0.5]}
@@ -93,7 +89,6 @@ export default function CityCanvas({
           intensity={0.4}
         />
 
-        {/* Orbit Controls */}
         <OrbitControls
           target={target}
           enableDamping={true}
@@ -104,13 +99,11 @@ export default function CityCanvas({
           makeDefault
         />
 
-        {/* Global Foundation Base */}
         <mesh position={[centerX, -0.15, centerZ]}>
           <boxGeometry args={[bounds.width + 12, 0.3, bounds.depth + 12]} />
           <meshStandardMaterial color="#0b1120" roughness={0.9} />
         </mesh>
 
-        {/* Structural Grid Reference */}
         <gridHelper
           args={[
             Math.max(bounds.width, bounds.depth) * 1.5,
@@ -121,10 +114,8 @@ export default function CityCanvas({
           position={[centerX, 0.01, centerZ]}
         />
 
-        {/* 1. All District Plates (Terraces) */}
         <DistrictPlates districts={districts} />
 
-        {/* 2. All Repository Buildings */}
         <Buildings
           buildings={buildings}
           districts={districts}
@@ -132,17 +123,14 @@ export default function CityCanvas({
           onSelectBuilding={onSelectBuilding}
         />
 
-        {/* 3. Dynamic Dependency Connection Arcs for Selected Building */}
         <ConnectionLines
           connections={layout.connections}
           selectedBuildingId={selectedBuildingId}
         />
 
-        {/* Scene performance and render telemetry */}
         <SceneStatsTracker />
       </Canvas>
 
-      {/* HUD Info Overlay */}
       <div className="absolute top-4 left-4 pointer-events-none flex flex-col gap-1 text-xs font-mono text-neutral-300 bg-neutral-900/80 backdrop-blur border border-neutral-800 rounded-lg p-3 shadow-lg">
         <div className="font-semibold text-neutral-100 flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-emerald-400" />
@@ -156,7 +144,6 @@ export default function CityCanvas({
         </div>
       </div>
 
-      {/* Navigation Help Controls */}
       <div className="absolute bottom-4 right-4 pointer-events-none text-xs font-mono text-neutral-400 bg-neutral-900/70 backdrop-blur border border-neutral-800/80 rounded px-2.5 py-1">
         Left Click: Rotate | Right Click: Pan | Scroll: Zoom
       </div>

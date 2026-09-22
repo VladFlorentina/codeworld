@@ -58,7 +58,6 @@ export default function ConnectionLines({
         const arcLift = Math.min(22, 2.5 + horizontalDistance * 0.22);
         const midY = Math.max(y0, y1) + arcLift;
 
-        // Visual differentiation: circular = amber, outgoing = cyan, incoming = purple
         let lineColor = isOutgoing ? "#38bdf8" : "#a855f7";
         if (c.is_circular) {
           lineColor = "#f59e0b";

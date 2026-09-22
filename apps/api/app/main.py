@@ -15,8 +15,6 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
-# ─── CORS ─────────────────────────────────────────────────────
-# In development the Next.js dev server runs on a different port.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
@@ -25,7 +23,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ─── Routers ──────────────────────────────────────────────────
 app.include_router(health.router, prefix="/api/v1", tags=["health"])
 app.include_router(repositories.router, prefix="/api/v1", tags=["repositories"])
 app.include_router(cities.router, prefix="/api/v1", tags=["cities"])

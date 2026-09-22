@@ -1,21 +1,4 @@
-"""
-Dependency graph construction and cycle detection using NetworkX.
-
-Responsibilities:
-  - Resolve intra-repository imports for Python and TypeScript/JavaScript.
-  - Classify each import into one of three categories:
-      1. "internal"   — resolved to a known file in `file_set`.
-      2. "external"   — recognized third-party library or package (e.g. fastapi, react).
-      3. "unresolved" — attempted internal resolution failed or path is unknown.
-  - Build a directed graph (nx.DiGraph) where:
-      Nodes = files in the repository
-      Edges = source_file → imported_target_file
-  - Calculate structural graph metrics:
-      - in_degree: how many internal files import this file
-      - out_degree: how many internal files this file imports
-      - circular_groups: strongly connected components with size > 1
-      - isolated_files: files with 0 in-degree and 0 out-degree
-"""
+"""Dependency graph construction and cycle detection using NetworkX."""
 from __future__ import annotations
 
 import logging
@@ -30,42 +13,19 @@ from analyzer.models import DependencyEdge, FileAnalysis, ImportedSymbol
 logger = logging.getLogger(__name__)
 
 
-# ─────────────────────────────────────────────────────────────
-# Graph Analysis Output Model
-# ─────────────────────────────────────────────────────────────
-
 @dataclass
 class GraphAnalysis:
     """Complete output of the dependency graph analysis step."""
 
-    # Directed graph of internal repository dependencies
     graph: nx.DiGraph
-
-    # External dependencies per file: { "src/main.py": ["fastapi", "pydantic"] }
     external_deps: dict[str, list[str]] = field(default_factory=dict)
-
-    # Unresolved imports per file: { "src/main.py": ["unknown_local"] }
     unresolved_imports: dict[str, list[str]] = field(default_factory=dict)
-
-    # List of unique DependencyEdge objects for internal imports (used for DB persistence)
     edges: list[DependencyEdge] = field(default_factory=list)
-
-    # In-degree per node: how many internal files import this file
     in_degree: dict[str, int] = field(default_factory=dict)
-
-    # Out-degree per node: how many internal files this file imports
     out_degree: dict[str, int] = field(default_factory=dict)
-
-    # Strongly connected components (cycles) with length > 1
     circular_groups: list[list[str]] = field(default_factory=list)
-
-    # Files with no internal inbound or outbound import edges
     isolated_files: list[str] = field(default_factory=list)
 
-
-# ─────────────────────────────────────────────────────────────
-# Python Import Resolver
-# ─────────────────────────────────────────────────────────────
 
 class PythonResolver:
     """

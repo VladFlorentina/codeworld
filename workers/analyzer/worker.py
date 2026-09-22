@@ -46,23 +46,9 @@ async def analyze_repository(
     installation_id: int | None = None,
     github_repository_id: int | None = None,
 ) -> dict:
-    """
-    Main background analysis pipeline task executed by ARQ.
-
-    Flow:
-      1. Fetch Repository and AnalysisRun from PostgreSQL.
-      2. Set AnalysisRun status to 'running', started_at to now.
-      3. For private repos: generate in-memory scoped installation token immediately before clone.
-      4. Clone repo shallowly to isolated directory via GIT_ASKPASS (no credentials in URL/logs).
-      5. Run discovery -> AST analysis -> dependency graph -> CityDTO.
-      6. Persist all records to PostgreSQL within a single atomic transaction.
-      7. Update AnalysisRun to 'complete' (preserving job_id in analysis_meta) and Repository to 'ready'.
-      8. On any exception: set status to 'failed', record error_message, avoid stuck tasks.
-      9. Finally: guarantee cleanup of the clone directory and token references.
-    """
+    """Execute repository analysis pipeline and persist city model."""
     session_factory: async_sessionmaker[AsyncSession] = ctx["session_factory"]
 
-    # 1. Update status to 'running'
     async with session_factory() as session:
         repo = await session.get(Repository, repository_id)
         run = await session.get(AnalysisRun, run_id)
@@ -87,7 +73,6 @@ async def analyze_repository(
             extra={"full_name": full_name, "run_id": run_id, "is_private": is_private},
         )
 
-        # Resolve installation_id and github_repository_id if not explicitly passed
         target_inst_id = installation_id
         if target_inst_id is None and run.analysis_meta and isinstance(run.analysis_meta, dict):
             target_inst_id = run.analysis_meta.get("installation_id")
@@ -106,7 +91,6 @@ async def analyze_repository(
             )
             auth_token = token_dto.token
 
-        # 2. Pipeline execution
         clone_path, owner, repo_name, commit_sha = clone_repository(
             clone_url,
             auth_token=auth_token,
@@ -127,12 +111,10 @@ async def analyze_repository(
             scope=run_id,
         )
 
-        # 3. Database persistence in a single transaction
         async with session_factory() as session:
             repo = await session.get(Repository, repository_id)
             run = await session.get(AnalysisRun, run_id)
 
-            # A. File Records
             file_rec_map: dict[str, str] = {}
             file_records_to_insert: list[FileRecord] = []
             cycle_nodes = {n for g in graph_analysis.circular_groups for n in g}
@@ -166,7 +148,6 @@ async def analyze_repository(
             session.add_all(file_records_to_insert)
             await session.flush()
 
-            # B. City record
             city_id = str(uuid.uuid4())
             city_row = City(
                 id=city_id,
@@ -177,7 +158,6 @@ async def analyze_repository(
             session.add(city_row)
             await session.flush()
 
-            # C. Districts
             districts_to_insert = [
                 District(
                     id=d.id,
@@ -192,7 +172,6 @@ async def analyze_repository(
             session.add_all(districts_to_insert)
             await session.flush()
 
-            # D. Buildings
             buildings_to_insert = []
             for b in city_dto.buildings:
                 fr_id = file_rec_map.get(b.path)
@@ -229,7 +208,6 @@ async def analyze_repository(
             session.add_all(buildings_to_insert)
             await session.flush()
 
-            # E. Connections (only between valid inserted buildings)
             valid_bld_ids = {b.id for b in buildings_to_insert}
             connections_to_insert = [
                 Connection(
@@ -245,7 +223,6 @@ async def analyze_repository(
             session.add_all(connections_to_insert)
             await session.flush()
 
-            # F. Dependency Edges
             dep_edges_to_insert = [
                 DependencyEdge(
                     id=str(uuid.uuid4()),
@@ -259,7 +236,6 @@ async def analyze_repository(
             session.add_all(dep_edges_to_insert)
             await session.flush()
 
-            # G. Update AnalysisRun & Repository
             current_meta = dict(run.analysis_meta or {})
             current_meta["summary"] = dataclasses.asdict(city_dto.summary)
             run.analysis_meta = current_meta

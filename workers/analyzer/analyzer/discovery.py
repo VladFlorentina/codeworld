@@ -1,29 +1,4 @@
-"""
-File discovery for the CodeWorld analysis pipeline.
-
-Responsibilities:
-  - Find all source files in a cloned repository.
-  - Respect .gitignore — never analyze files git itself ignores.
-  - Skip known binary file types (images, fonts, archives, etc.).
-  - Skip directories that contain non-source noise (node_modules, etc.).
-  - Enforce a maximum file count to prevent runaway analysis on
-    pathological repositories.
-  - Detect and skip symlinks that point outside the clone root
-    (security: path traversal prevention).
-  - Return a list of FileInfo objects ready for the next pipeline step.
-
-Why use `git ls-files` instead of os.walk?
-  `git ls-files` returns exactly the files that git is tracking.
-  This means:
-    - .gitignored files are automatically excluded.
-    - The .git directory is automatically excluded.
-    - Untracked files (e.g. generated files in the working tree) are excluded.
-  This is the most correct way to enumerate a repository's source files
-  because it uses git's own knowledge of what belongs to the project.
-
-  os.walk would require us to parse and apply .gitignore patterns ourselves,
-  which is complex and error-prone (nested .gitignore, .gitignore negation, etc.).
-"""
+"""File discovery for the CodeWorld analysis pipeline."""
 from __future__ import annotations
 
 import logging
@@ -37,23 +12,9 @@ from analyzer.models import FileInfo
 
 logger = logging.getLogger(__name__)
 
-# ─────────────────────────────────────────────────────────────
-# Configuration constants
-# ─────────────────────────────────────────────────────────────
-
-# Maximum number of files to analyze in a single run.
-# Repositories with more tracked files than this get truncated.
-# The truncation is logged clearly — we never silently skip files.
 MAX_FILES = int(os.getenv("MAX_FILES_PER_ANALYSIS", "10000"))
+MAX_FILE_SIZE_BYTES = 2 * 1024 * 1024
 
-# Maximum size of a single source file we will read and analyze.
-# Files larger than this are added to FileInfo but skipped in AST analysis.
-MAX_FILE_SIZE_BYTES = 2 * 1024 * 1024  # 2 MB
-
-# Directory names that git tracks but we want to skip for analysis.
-# These contain third-party code, not the project's own source.
-# Note: Most of these should already be .gitignored in well-maintained repos,
-# but some repositories commit their dependencies.
 SKIP_DIRS: frozenset[str] = frozenset({
     "node_modules",
     ".git",
@@ -72,64 +33,38 @@ SKIP_DIRS: frozenset[str] = frozenset({
     ".nuxt",
     "coverage",
     ".coverage",
-    "vendor",          # Go, PHP
-    "target",          # Rust, Maven
-    "bin",             # compiled output in some projects
-    "obj",             # C# compiled output
+    "vendor",
+    "target",
+    "bin",
+    "obj",
     ".gradle",
     ".idea",
     ".vscode",
-    "Pods",            # iOS CocoaPods
-    "DerivedData",     # Xcode
+    "Pods",
+    "DerivedData",
 })
 
-# File extensions we always skip regardless of git tracking.
-# These are in addition to the BINARY_EXTENSIONS in language.py.
 SKIP_EXTENSIONS: frozenset[str] = frozenset({
-    ".min.js",   # minified JS — no useful AST
-    ".min.css",  # minified CSS
-    ".map",      # source maps — large, not source
-    ".snap",     # Jest snapshots — generated
+    ".min.js",
+    ".min.css",
+    ".map",
+    ".snap",
     ".pyc",
     ".pyo",
 })
 
 
-# ─────────────────────────────────────────────────────────────
-# Public API
-# ─────────────────────────────────────────────────────────────
-
 def discover_files(clone_path: Path) -> tuple[list[FileInfo], list[tuple[str, str]]]:
-    """
-    Discover all analyzable source files in a cloned repository.
-
-    Uses `git ls-files` to enumerate tracked files, then applies
-    additional filters (binary extensions, skip dirs, size limits).
-
-    Args:
-        clone_path: Absolute path to the cloned repository root.
-
-    Returns:
-        A tuple of:
-          - files: List of FileInfo objects for analyzable files.
-          - skipped: List of (relative_path, reason) for skipped files.
-
-    This function never raises — errors are captured in the skipped list.
-    The pipeline continues even if some files cannot be processed.
-    """
+    """Discover analyzable source files using git ls-files and path filtering."""
     files: list[FileInfo] = []
     skipped: list[tuple[str, str]] = []
 
-    # ── Open repo and list tracked files ─────────────────────
     try:
         repo = git.Repo(clone_path)
     except git.InvalidGitRepositoryError:
         logger.error("Not a valid git repository", extra={"path": str(clone_path)})
-        # Fall back to os.walk if git metadata is missing
         return _fallback_walk(clone_path, skipped), skipped
 
-    # git ls-files returns all tracked files, one per line.
-    # This is the authoritative list — .gitignore is already applied.
     try:
         tracked_str = repo.git.ls_files()
     except git.GitCommandError as exc:

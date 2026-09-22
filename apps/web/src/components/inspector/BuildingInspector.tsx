@@ -25,7 +25,6 @@ export default function BuildingInspector({
       data-testid="building-inspector"
       className="absolute top-16 right-6 z-20 w-84 max-w-[calc(100vw-3rem)] rounded-xl border border-neutral-800/90 bg-[#0f172a]/95 p-5 shadow-2xl backdrop-blur-md text-neutral-200 transition-all"
     >
-      {/* Header with Color Tag, Name, and Close Button */}
       <div className="flex items-start justify-between gap-3 border-b border-neutral-800 pb-3">
         <div className="flex items-center gap-2.5 min-w-0">
           <span
@@ -70,7 +69,6 @@ export default function BuildingInspector({
         </button>
       </div>
 
-      {/* Path & Color Hex */}
       <div className="py-3 space-y-1.5 border-b border-neutral-800/60 font-mono text-xs">
         <div>
           <span className="text-neutral-500 block text-[10px] uppercase tracking-wider">Path</span>
@@ -86,13 +84,11 @@ export default function BuildingInspector({
         </div>
       </div>
 
-      {/* Raw Metrics Section */}
       <div className="pt-3 space-y-3 text-xs font-mono">
         <div className="text-[10px] font-semibold text-neutral-400 uppercase tracking-wider">
           Metrics &amp; Dependency Graph
         </div>
 
-        {/* Lines of Code Grid */}
         <div className="grid grid-cols-3 gap-2 bg-neutral-950/60 p-2.5 rounded-lg border border-neutral-800/60 text-center">
           <div>
             <div className="text-neutral-500 text-[10px]">Total LOC</div>
@@ -114,7 +110,6 @@ export default function BuildingInspector({
           </div>
         </div>
 
-        {/* Complexity & Counts Grid */}
         <div className="grid grid-cols-2 gap-2">
           <div className="bg-neutral-950/50 p-2 rounded border border-neutral-800/40 flex justify-between items-center">
             <span className="text-neutral-400 text-[11px]">Complexity:</span>
@@ -142,7 +137,6 @@ export default function BuildingInspector({
           </div>
         </div>
 
-        {/* Dependency Graph Degrees & Cycle */}
         <div className="space-y-1.5 pt-1">
           <div className="bg-neutral-950/50 p-2 rounded border border-neutral-800/40 flex justify-between items-center">
             <span className="text-neutral-400 text-[11px]">In-Degree (imported by):</span>

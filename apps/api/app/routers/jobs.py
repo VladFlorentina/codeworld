@@ -48,20 +48,7 @@ async def get_job_status(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Get the status of an analysis job.
-
-    PostgreSQL is the single source of truth for persistent analysis status.
-    Looks up the AnalysisRun record associated with this ARQ job_id
-    (or run_id as fallback) and returns status: queued | running | complete | failed.
-
-    Security:
-      - Public repository associated with this run: accessible anonymously.
-      - Private repository: requires valid session and authorized GitHub App access.
-        Unauthorized requests receive 401 or 403 WITHOUT returning any metadata or error messages.
-      - Error messages are sanitized to prevent exposing internal tracebacks or paths.
-    """
-    # Lookup by job_id stored in analysis_meta JSONB, or direct run_id
+    """Get the status of an analysis job with sanitized errors and repo authorization."""
     conditions = [AnalysisRun.analysis_meta["job_id"].as_string() == job_id]
     try:
         val_uuid = str(uuid.UUID(job_id))

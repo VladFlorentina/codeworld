@@ -1,14 +1,3 @@
-"""
-Pydantic request/response schemas for the repositories router.
-
-Schemas vs Models:
-  - app/models/   = SQLAlchemy ORM (database layer)
-  - app/schemas/  = Pydantic (API layer: validation, serialization, Swagger docs)
-
-These two layers are intentionally separate. The API never exposes ORM objects
-directly — it always goes through a schema. This gives us control over exactly
-what fields are readable/writable through the API.
-"""
 from __future__ import annotations
 
 from typing import Literal
@@ -17,50 +6,21 @@ from pydantic import BaseModel, HttpUrl, field_validator
 
 
 class SubmitRepositoryRequest(BaseModel):
-    """
-    Request body for POST /api/v1/repositories.
-
-    The client sends a GitHub repository URL. We validate it here
-    before touching the database or enqueueing any job.
-    """
-
     url: str
 
     @field_validator("url")
     @classmethod
     def validate_github_url(cls, v: str) -> str:
-        """
-        Ensure the URL is a valid GitHub repository URL.
-
-        We enforce github.com here for two reasons:
-          1. Security: prevents SSRF by allowlisting the host.
-          2. Scope: CodeWorld only analyzes GitHub repos in the MVP.
-
-        Valid examples:
-          https://github.com/owner/repo
-          https://github.com/owner/repo.git
-          https://github.com/owner/repo/
-
-        Invalid:
-          https://gitlab.com/owner/repo
-          https://github.com/owner             (no repo name)
-          ftp://github.com/owner/repo          (wrong scheme)
-        """
         v = v.strip().rstrip("/")
-
-        # Remove trailing .git for consistency
         if v.endswith(".git"):
             v = v[:-4]
 
-        # Must be HTTPS
         if not v.startswith("https://"):
             raise ValueError("Repository URL must use HTTPS (https://github.com/owner/repo)")
 
-        # Must be github.com
         if not v.startswith("https://github.com/"):
             raise ValueError("Only GitHub repositories are supported (https://github.com/...)")
 
-        # Must have at least owner/repo path segments
         path = v.removeprefix("https://github.com/")
         parts = [p for p in path.split("/") if p]
         if len(parts) < 2:

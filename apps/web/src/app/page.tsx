@@ -37,7 +37,6 @@ export default function ExplorePage() {
   const [activeJob, setActiveJob] = useState<ActiveJob | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Polling interval ref for guaranteed cleanup
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const clearPolling = () => {
@@ -48,13 +47,12 @@ export default function ExplorePage() {
   };
 
   useEffect(() => {
-    // Cleanup polling when component unmounts
     return () => {
       clearPolling();
     };
   }, []);
 
-  // Normalize input: accepts "owner/repo" or full "https://github.com/owner/repo"
+  // Accepts "owner/repo" or full "https://github.com/owner/repo"
   const normalizeGithubUrl = (raw: string): string => {
     const trimmed = raw.trim();
     if (!trimmed) return "";
@@ -72,7 +70,6 @@ export default function ExplorePage() {
       return trimmed;
     }
 
-    // Handles "owner/repo" format
     const parts = trimmed.split("/").map((p) => p.trim()).filter(Boolean);
     if (parts.length === 2 && !parts[0].includes(".")) {
       return `https://github.com/${parts[0]}/${parts[1]}`;
@@ -104,13 +101,11 @@ export default function ExplorePage() {
       const res = await submitRepository(normalized);
 
       if (res.status === "ready") {
-        // City is ready immediately: navigate without polling
         router.push(`/city/${res.repository_id}`);
         return;
       }
 
       if ((res.status === "analyzing" || res.status === "newly_queued") && res.job_id) {
-        // Start polling real status
         const initialStatus: JobStatus = res.status === "analyzing" ? "running" : "queued";
         setActiveJob({
           jobId: res.job_id,
@@ -118,7 +113,6 @@ export default function ExplorePage() {
           status: initialStatus,
         });
 
-        // Set up interval polling every 2000ms
         pollIntervalRef.current = setInterval(async () => {
           try {
             const jobData = await getJobStatus(res.job_id!);
@@ -131,7 +125,6 @@ export default function ExplorePage() {
               setIsSubmitting(false);
               setError(jobData.error || "Repository analysis failed. Please try again.");
             } else {
-              // Update real status (queued or running)
               setActiveJob((prev) =>
                 prev ? { ...prev, status: jobData.status } : null
               );
@@ -165,11 +158,9 @@ export default function ExplorePage() {
 
   return (
     <main className="relative flex min-h-[calc(100vh-3.5rem)] flex-col items-center justify-center bg-[#0a0f1d] px-6 py-12 text-white">
-      {/* Background ambient glow */}
       <div className="pointer-events-none absolute top-1/4 h-96 w-96 rounded-full bg-emerald-500/10 blur-3xl" />
 
       <div className="relative z-10 w-full max-w-2xl text-center">
-        {/* Branding badge */}
         <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-950/40 px-3.5 py-1 text-xs font-mono text-emerald-400 backdrop-blur-sm">
           <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
           <span>CodeWorld &bull; Explore</span>
@@ -183,7 +174,6 @@ export default function ExplorePage() {
           Visualize directory hierarchy, lines of code, and internal dependencies.
         </p>
 
-        {/* Search / Paste Input Form */}
         <form onSubmit={handleSubmit} className="mt-8 flex flex-col sm:flex-row gap-2">
           <div className="relative flex-1">
             <input
@@ -214,7 +204,6 @@ export default function ExplorePage() {
           </button>
         </form>
 
-        {/* Active Analysis Tracking Card (Real Status Polling) */}
         {activeJob && (
           <div
             data-testid="job-status-card"
@@ -233,7 +222,6 @@ export default function ExplorePage() {
                 </div>
               </div>
 
-              {/* Real Status Badge (no fake steps) */}
               <div className="flex items-center gap-2">
                 <span className="text-xs text-neutral-500">Status:</span>
                 <span
@@ -257,7 +245,6 @@ export default function ExplorePage() {
           </div>
         )}
 
-        {/* Error Display Card */}
         {error && (
           <div
             data-testid="explore-error"
@@ -277,7 +264,6 @@ export default function ExplorePage() {
           </div>
         )}
 
-        {/* Featured Worlds Section */}
         <div className="mt-12 text-left">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-xs font-mono uppercase tracking-wider text-neutral-500">

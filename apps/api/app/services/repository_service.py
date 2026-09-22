@@ -104,16 +104,7 @@ async def ensure_repository_analysis(
     default_branch: str = "main",
     installation_id: int | None = None,
 ) -> tuple[int, SubmitRepositoryResponse]:
-    """
-    Unified world ensuring logic for public and private GitHub repositories.
-
-    Handles:
-      1. Concurrent acquisition / creation of Repository record.
-      2. Instant reuse if complete City exists for (repository + commit_sha).
-      3. In-flight reuse if AnalysisRun is queued/running for (repository + commit_sha).
-      4. Atomic creation of new AnalysisRun and enqueueing to ARQ Redis.
-    """
-    # 1. Fetch or create Repository (handling concurrent insertion)
+    """Ensure repository analysis with deduplication, concurrency lock, and ARQ queueing."""
     stmt = select(Repository).where(Repository.full_name == full_name)
     res = await db.execute(stmt)
     repo = res.scalar_one_or_none()
@@ -139,7 +130,6 @@ async def ensure_repository_analysis(
             if repo is None:
                 raise HTTPException(status_code=500, detail="Failed to acquire repository record.")
     else:
-        # Update metadata if needed
         if repo.is_private != is_private:
             repo.is_private = is_private
         if github_repository_id is not None and repo.github_repository_id != github_repository_id:
@@ -148,12 +138,10 @@ async def ensure_repository_analysis(
             repo.default_branch = default_branch
         await db.flush()
 
-    # 2. Acquire transaction-level advisory lock to serialize concurrent analysis requests
-    # for the exact same repository + commit SHA. Automatically released at commit/rollback.
+    # Advisory lock serializes concurrent analysis requests for identical repo + commit SHA
     lock_key = f"codeworld:analyze:{repo.id}:{current_head_sha}"
     await db.execute(select(func.pg_advisory_xact_lock(func.hashtext(lock_key))))
 
-    # 3. Check for existing complete City matching (repository_id + current_head_sha)
     city_stmt = (
         select(City, AnalysisRun)
         .join(AnalysisRun, City.run_id == AnalysisRun.id)
@@ -177,7 +165,6 @@ async def ensure_repository_analysis(
             message="City is already analyzed and ready.",
         )
 
-    # 3. Check for active AnalysisRun matching (repository_id + current_head_sha)
     active_run_stmt = (
         select(AnalysisRun)
         .where(
@@ -205,7 +192,6 @@ async def ensure_repository_analysis(
             message="Analysis is already in progress for this commit.",
         )
 
-    # 4. Create new AnalysisRun with commit_sha populated immediately
     run_id = str(uuid.uuid4())
     job_id = str(uuid.uuid4())
     meta: dict[str, Any] = {"job_id": job_id}
@@ -223,7 +209,6 @@ async def ensure_repository_analysis(
     db.add(run)
     await db.commit()
 
-    # 5. Enqueue job into ARQ Redis queue AFTER committing to PostgreSQL
     redis_pool = await create_pool(RedisSettings.from_dsn(settings.redis_url))
     try:
         job = await redis_pool.enqueue_job(

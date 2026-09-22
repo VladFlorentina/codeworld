@@ -80,7 +80,6 @@ export default function CityViewerPage({
 
   return (
     <div className="relative flex h-[calc(100vh-3.5rem)] w-full flex-col overflow-hidden bg-[#0a0f1d] text-white">
-      {/* Top Navigation Bar */}
       <header className="z-10 flex h-14 items-center justify-between border-b border-neutral-800/80 bg-[#0f172a]/80 px-6 backdrop-blur-md">
         <div className="flex items-center gap-4">
           <Link
@@ -107,7 +106,6 @@ export default function CityViewerPage({
           </div>
         </div>
 
-        {/* City Scale & Timing Telemetry */}
         <div className="flex items-center gap-4 text-xs font-mono">
           {timings && (
             <div className="hidden md:flex items-center gap-2 text-neutral-400 border border-neutral-800/60 rounded px-2.5 py-1 bg-neutral-950/40">
@@ -129,7 +127,6 @@ export default function CityViewerPage({
         </div>
       </header>
 
-      {/* Main 3D Viewport & Inspector Overlay */}
       <div className="relative flex-1 w-full h-[calc(100vh-3.5rem)]">
         {loading && (
           <div data-testid="viewer-loading" className="flex h-full w-full flex-col items-center justify-center gap-4 bg-[#0a0f1d]">
