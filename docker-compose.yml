@@ -43,7 +43,7 @@ services:
   api:
     build:
       context: .
-      dockerfile: apps/api/Dockerfile
+      dockerfile: backend/api/Dockerfile
     container_name: codeworld_api
     restart: unless-stopped
     ports:
@@ -61,9 +61,9 @@ services:
       GITHUB_APP_SLUG: ${GITHUB_APP_SLUG:-}
       TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:-}
     volumes:
-      - ./apps/api:/app
-      - ./packages/db:/packages/db:ro
-      - ./packages/github_app:/packages/github_app:ro
+      - ./backend/api:/app
+      - ./backend/packages/db:/packages/db:ro
+      - ./backend/packages/github_app:/packages/github_app:ro
       - repo_clones:/tmp/codeworld_repos
       - type: bind
         source: ${GITHUB_APP_PRIVATE_KEY_HOST_PATH:-D:/codeworld-secrets/codeworld-dev-vlad.pem}
@@ -82,7 +82,7 @@ services:
   worker:
     build:
       context: .
-      dockerfile: workers/analyzer/Dockerfile
+      dockerfile: backend/worker/Dockerfile
     container_name: codeworld_worker
     restart: unless-stopped
     environment:
@@ -97,9 +97,9 @@ services:
       GITHUB_APP_PRIVATE_KEY_PATH: /run/secrets/github_app_private_key.pem
       TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:-}
     volumes:
-      - ./workers/analyzer:/app
-      - ./packages/db:/packages/db:ro
-      - ./packages/github_app:/packages/github_app:ro
+      - ./backend/worker:/app
+      - ./backend/packages/db:/packages/db:ro
+      - ./backend/packages/github_app:/packages/github_app:ro
       - repo_clones:/tmp/codeworld_repos
       - type: bind
         source: ${GITHUB_APP_PRIVATE_KEY_HOST_PATH:-D:/codeworld-secrets/codeworld-dev-vlad.pem}
