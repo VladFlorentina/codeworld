@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.database import engine, Base
-from app.routers import health, repositories, cities, jobs, auth, github
+from app.routers import health, repositories, cities, jobs, auth, github, explore
 
 app = FastAPI(
     title="CodeWorld API",
@@ -29,3 +29,4 @@ app.include_router(cities.router, prefix="/api/v1", tags=["cities"])
 app.include_router(jobs.router, prefix="/api/v1", tags=["jobs"])
 app.include_router(auth.router, prefix="/api/v1", tags=["auth"])
 app.include_router(github.router, prefix="/api/v1", tags=["github"])
+app.include_router(explore.router, prefix="/api/v1", tags=["explore"])
