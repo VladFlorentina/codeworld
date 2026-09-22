@@ -1,4 +1,5 @@
 import { spawn, execSync } from "child_process";
+import { waitFor } from "./helpers/waitFor";
 
 const EDGE_PATH = "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe";
 const TEST_USER_ID = "ac2e5661-cda9-4e1d-a4a4-dd510b6830b1";
@@ -19,15 +20,6 @@ function getSessionCookieInMemory(): string {
   ).toString().trim();
   const lines = out.split("\n").map((l) => l.trim()).filter(Boolean);
   return lines[lines.length - 1];
-}
-
-async function waitFor(fn: () => Promise<boolean>, timeoutMs = 10000, intervalMs = 100): Promise<boolean> {
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    if (await fn()) return true;
-    await new Promise((r) => setTimeout(r, intervalMs));
-  }
-  return false;
 }
 
 async function runCp5_6dPrivateViewerTests() {

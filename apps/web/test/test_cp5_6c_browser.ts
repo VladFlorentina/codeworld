@@ -1,4 +1,5 @@
 import { spawn, execSync } from "child_process";
+import { waitFor } from "./helpers/waitFor";
 
 const EDGE_PATH = "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe";
 const TEST_USER_ID = "ac2e5661-cda9-4e1d-a4a4-dd510b6830b1";
@@ -115,7 +116,11 @@ async function runCp5_6cBrowserTests() {
     await send("Network.deleteCookies", { name: "codeworld_session", url: "http://localhost:8000" });
 
     await send("Page.navigate", { url: "http://localhost:3000/my-repositories" });
-    await new Promise((r) => setTimeout(r, 2000)); // Wait for render and /auth/me to settle
+    const unauthLoaded = await waitFor(async () => {
+      const title = await evalCode('document.querySelector("h1")?.textContent');
+      return title?.includes("Connect Your GitHub Account") || false;
+    }, 10000);
+    assert(unauthLoaded, "Failed to render unauthenticated State 1 heading within 10s");
 
     const unauthTitle = await evalCode('document.querySelector("h1")?.textContent');
     assert(
@@ -164,7 +169,11 @@ async function runCp5_6cBrowserTests() {
     });
 
     await send("Page.navigate", { url: "http://localhost:3000/my-repositories" });
-    await new Promise((r) => setTimeout(r, 3000)); // Wait for /auth/me and /github/repositories
+    const reposLoaded = await waitFor(async () => {
+      const count = await evalCode('document.querySelectorAll("[data-testid^=\'repo-card-\']").length');
+      return (count || 0) >= 1;
+    }, 15000);
+    assert(reposLoaded, "Repository cards failed to render for authenticated user within 15s");
 
     const headingText = await evalCode('document.querySelector("h1")?.textContent');
     assert(headingText?.includes("My Repositories"), `Expected My Repositories heading, got: ${headingText}`);
@@ -242,11 +251,15 @@ async function runCp5_6cBrowserTests() {
           }
         })()
       `);
-      await new Promise((r) => setTimeout(r, 400));
     }
 
     // Type search query
     await setInputValue("codeworld-private");
+    const matchedFiltered = await waitFor(async () => {
+      const count = await evalCode('document.querySelectorAll("[data-testid^=\'repo-card-\']").length');
+      return count === 1;
+    }, 5000);
+    assert(matchedFiltered, "Expected exactly 1 match for search query within 5s");
 
     const matchedCards = await evalCode(
       'document.querySelectorAll("[data-testid^=\'repo-card-\']").length'
@@ -255,11 +268,11 @@ async function runCp5_6cBrowserTests() {
 
     // Search for non-existent repo
     await setInputValue("nonexistent-xyz-search-query-999");
-
-    const zeroCards = await evalCode(
-      'document.querySelectorAll("[data-testid^=\'repo-card-\']").length'
-    );
-    assert(zeroCards === 0, `Expected 0 cards for non-matching query, got: ${zeroCards}`);
+    const zeroFiltered = await waitFor(async () => {
+      const count = await evalCode('document.querySelectorAll("[data-testid^=\'repo-card-\']").length');
+      return count === 0;
+    }, 5000);
+    assert(zeroFiltered, "Expected 0 cards for non-matching query within 5s");
 
     const emptyMsg = await evalCode('document.querySelector("main")?.textContent');
     assert(
@@ -269,11 +282,12 @@ async function runCp5_6cBrowserTests() {
 
     // Clear search
     await setInputValue("");
+    const restoredFiltered = await waitFor(async () => {
+      const count = await evalCode('document.querySelectorAll("[data-testid^=\'repo-card-\']").length');
+      return count === repoCardsCount;
+    }, 5000);
+    assert(restoredFiltered, `Expected restored cards ${repoCardsCount} within 5s`);
 
-    const restoredCards = await evalCode(
-      'document.querySelectorAll("[data-testid^=\'repo-card-\']").length'
-    );
-    assert(restoredCards === repoCardsCount, `Expected restored cards ${repoCardsCount}, got: ${restoredCards}`);
     console.log("✓ Real-time search filter and empty filter message work as expected.");
 
     // ─────────────────────────────────────────────────────────────
@@ -296,15 +310,13 @@ async function runCp5_6cBrowserTests() {
     assert(clickSuccess, "Could not find or click 'Visualize City' button");
 
     // Wait for API response and potential navigation (either instant 'ready' or polled 'complete')
-    let currentUrl = "";
-    for (let i = 0; i < 30; i++) {
-      await new Promise((r) => setTimeout(r, 500));
-      currentUrl = await evalCode("window.location.pathname");
-      if (currentUrl.startsWith("/city/")) {
-        break;
-      }
-    }
+    const navigatedToCity = await waitFor(async () => {
+      const path = await evalCode("window.location.pathname");
+      return path?.startsWith("/city/") || false;
+    }, 15000);
+    assert(navigatedToCity, "Failed to navigate to /city/[repositoryId] after clicking Visualize City within 15s");
 
+    const currentUrl = (await evalCode("window.location.pathname")) as string;
     assert(
       currentUrl.startsWith("/city/"),
       `Expected transition to /city/[repositoryId], but remained at: ${currentUrl}`
@@ -324,15 +336,13 @@ async function runCp5_6cBrowserTests() {
     console.log(`✓ Successfully navigated to City Viewer using internal UUID: ${currentUrl}`);
 
     // Wait for 3D City Viewer page to render
-    await new Promise((r) => setTimeout(r, 2500));
-    const cityTitle = await evalCode('document.querySelector("h1")?.textContent');
-    assert(
-      cityTitle?.includes("codeworld-private-test"),
-      `Expected codeworld-private-test in City Viewer title, got: ${cityTitle}`
-    );
+    const cityViewerLoaded = await waitFor(async () => {
+      const hasCanvas = await evalCode('document.querySelector("canvas") !== null');
+      const cityTitle = await evalCode('document.querySelector("h1")?.textContent');
+      return Boolean(hasCanvas) && (cityTitle?.includes("codeworld-private-test") || false);
+    }, 15000);
+    assert(cityViewerLoaded, "City Viewer 3D canvas and title failed to render within 15s");
 
-    const hasCityCanvas = await evalCode('document.querySelector("canvas") !== null');
-    assert(hasCityCanvas, "Expected 3D City canvas rendered");
     console.log("✓ City Viewer rendered private repository 3D visualization.");
 
     // ─────────────────────────────────────────────────────────────
@@ -347,12 +357,14 @@ async function runCp5_6cBrowserTests() {
         if (link) link.click();
       })()
     `);
-    await new Promise((r) => setTimeout(r, 1500));
 
-    const returnedUrl = await evalCode("window.location.pathname");
+    const returnedToRepos = await waitFor(async () => {
+      const path = await evalCode("window.location.pathname");
+      return path === "/my-repositories";
+    }, 10000);
     assert(
-      returnedUrl === "/my-repositories",
-      `Expected /my-repositories after clicking navbar link, got: ${returnedUrl}`
+      returnedToRepos,
+      "Expected /my-repositories after clicking navbar link within 10s"
     );
     console.log("✓ Navbar navigation back to /my-repositories confirmed.");
 
@@ -386,16 +398,13 @@ async function runCp5_6cBrowserTests() {
 
     await send("Page.navigate", { url: "http://localhost:3000/my-repositories" });
 
-    let state2Heading = "";
-    for (let i = 0; i < 20; i++) {
-      await new Promise((r) => setTimeout(r, 400));
-      state2Heading = (await evalCode('document.querySelector("h1")?.textContent')) || "";
-      if (state2Heading.includes("No Repositories Selected")) break;
-    }
-
+    const state2HeadingOk = await waitFor(async () => {
+      const heading = await evalCode('document.querySelector("h1")?.textContent');
+      return heading?.includes("No Repositories Selected") || false;
+    }, 10000);
     assert(
-      state2Heading.includes("No Repositories Selected"),
-      `Expected 'No Repositories Selected', got: ${state2Heading}`
+      state2HeadingOk,
+      "Expected 'No Repositories Selected' heading within 10s"
     );
 
     const configBtnText = await evalCode(
@@ -434,16 +443,13 @@ async function runCp5_6cBrowserTests() {
 
     await send("Page.navigate", { url: "http://localhost:3000/my-repositories" });
 
-    let state4Heading = "";
-    for (let i = 0; i < 20; i++) {
-      await new Promise((r) => setTimeout(r, 400));
-      state4Heading = (await evalCode('document.querySelector("h2")?.textContent')) || "";
-      if (state4Heading.includes("Connection or Session Error")) break;
-    }
-
+    const state4HeadingOk = await waitFor(async () => {
+      const heading = await evalCode('document.querySelector("h2")?.textContent');
+      return heading?.includes("Connection or Session Error") || false;
+    }, 10000);
     assert(
-      state4Heading.includes("Connection or Session Error"),
-      `Expected 'Connection or Session Error', got: ${state4Heading}`
+      state4HeadingOk,
+      "Expected 'Connection or Session Error' heading within 10s"
     );
 
     const reconnectBtnText = await evalCode(

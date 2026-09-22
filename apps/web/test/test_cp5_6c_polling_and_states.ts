@@ -1,4 +1,5 @@
 import { spawn, execSync } from "child_process";
+import { waitFor } from "./helpers/waitFor";
 
 const EDGE_PATH = "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe";
 const TEST_USER_ID = "ac2e5661-cda9-4e1d-a4a4-dd510b6830b1";
@@ -174,14 +175,13 @@ async function runCp5_6cPollingAndStatesTests() {
     await send("Page.navigate", { url: "http://localhost:3000/my-repositories" });
 
     let zeroInstHeading = "";
-    for (let i = 0; i < 20; i++) {
-      await new Promise((r) => setTimeout(r, 300));
+    const zeroInstFound = await waitFor(async () => {
       zeroInstHeading = (await evalCode('document.querySelector("h1")?.textContent')) || "";
-      if (zeroInstHeading.includes("Install CodeWorld on GitHub")) break;
-    }
+      return zeroInstHeading.includes("Install CodeWorld on GitHub");
+    }, 10000);
 
     assert(
-      zeroInstHeading.includes("Install CodeWorld on GitHub"),
+      zeroInstFound,
       `Expected 'Install CodeWorld on GitHub', got: ${zeroInstHeading}`
     );
 
@@ -204,14 +204,13 @@ async function runCp5_6cPollingAndStatesTests() {
     await send("Page.navigate", { url: "http://localhost:3000/my-repositories" });
 
     let zeroReposHeading = "";
-    for (let i = 0; i < 20; i++) {
-      await new Promise((r) => setTimeout(r, 300));
+    const zeroReposFound = await waitFor(async () => {
       zeroReposHeading = (await evalCode('document.querySelector("h1")?.textContent')) || "";
-      if (zeroReposHeading.includes("No Repositories Selected")) break;
-    }
+      return zeroReposHeading.includes("No Repositories Selected");
+    }, 10000);
 
     assert(
-      zeroReposHeading.includes("No Repositories Selected"),
+      zeroReposFound,
       `Expected 'No Repositories Selected', got: ${zeroReposHeading}`
     );
 
@@ -244,7 +243,11 @@ async function runCp5_6cPollingAndStatesTests() {
     // ─────────────────────────────────────────────────────────────
     console.log("\n[Test 3] Controlled Polling: newly_queued -> queued -> running -> complete");
     await send("Page.navigate", { url: "http://localhost:3000/my-repositories" });
-    await new Promise((r) => setTimeout(r, 2500)); // Load real repositories
+    const realReposLoaded = await waitFor(async () => {
+      const count = await evalCode('document.querySelectorAll("button[data-testid^=\'btn-analyze-\']").length');
+      return (count || 0) >= 1;
+    }, 15000);
+    assert(realReposLoaded, "Failed to load real repositories and render analyze button within 15s");
 
     // Setup Mock Fetch Interceptor for Analyze and Job Polling
     let jobPollCount = 0;
@@ -334,23 +337,25 @@ async function runCp5_6cPollingAndStatesTests() {
     `);
 
     // Poll 0: Initial state immediately after click
-    await new Promise((r) => setTimeout(r, 600));
-    const cardStatusQueued = await evalCode(`
-      (() => {
-        const card = document.querySelector("[data-testid^='repo-card-']");
-        return card?.textContent || "";
-      })()
-    `);
+    let cardStatusQueued = "";
+    const queuedFound = await waitFor(async () => {
+      cardStatusQueued = (await evalCode(`
+        (() => {
+          const card = document.querySelector("[data-testid^='repo-card-']");
+          return card?.textContent || "";
+        })()
+      `)) || "";
+      return cardStatusQueued.includes("Queued...");
+    }, 10000);
     assert(
-      cardStatusQueued.includes("Queued..."),
+      queuedFound,
       `Expected 'Queued...' status immediately after newly_queued, got: ${cardStatusQueued}`
     );
     console.log("  ✓ Initial transition: 'Queued...' state active.");
 
     // Wait for Poll 2: running -> Analyzing...
     let cardStatusRunning = "";
-    for (let i = 0; i < 15; i++) {
-      await new Promise((r) => setTimeout(r, 500));
+    const analyzingFound = await waitFor(async () => {
       cardStatusRunning =
         (await evalCode(`
           (() => {
@@ -358,23 +363,22 @@ async function runCp5_6cPollingAndStatesTests() {
             return card?.textContent || "";
           })()
         `)) || "";
-      if (cardStatusRunning.includes("Analyzing...")) break;
-    }
+      return cardStatusRunning.includes("Analyzing...");
+    }, 15000);
     assert(
-      cardStatusRunning.includes("Analyzing..."),
+      analyzingFound,
       `Expected 'Analyzing...' state on poll tick, got: ${cardStatusRunning}`
     );
     console.log("  ✓ Polled transition: 'Analyzing...' state active.");
 
     // Wait for Poll 3: complete -> navigates to /city/[id]
     let targetPath = "";
-    for (let i = 0; i < 20; i++) {
-      await new Promise((r) => setTimeout(r, 500));
+    const cityNavOk = await waitFor(async () => {
       targetPath = (await evalCode("window.location.pathname")) || "";
-      if (targetPath.startsWith("/city/")) break;
-    }
+      return targetPath === `/city/${TARGET_CITY_ID}`;
+    }, 15000);
     assert(
-      targetPath === `/city/${TARGET_CITY_ID}`,
+      cityNavOk,
       `Expected navigation to /city/${TARGET_CITY_ID}, got: ${targetPath}`
     );
     console.log(`  ✓ Completed transition: Navigated to ${targetPath}`);
@@ -388,7 +392,11 @@ async function runCp5_6cPollingAndStatesTests() {
     // ─────────────────────────────────────────────────────────────
     console.log("\n[Test 4] Analysis Failure & Controlled Retry");
     await send("Page.navigate", { url: "http://localhost:3000/my-repositories" });
-    await new Promise((r) => setTimeout(r, 2000));
+    const test4PageLoaded = await waitFor(async () => {
+      const count = await evalCode('document.querySelectorAll("button[data-testid^=\'btn-analyze-\']").length');
+      return (count || 0) >= 1;
+    }, 15000);
+    assert(test4PageLoaded, "Failed to reload repository cards for Test 4 within 15s");
 
     await send("Fetch.enable", {
       patterns: [
@@ -458,18 +466,15 @@ async function runCp5_6cPollingAndStatesTests() {
     `);
 
     // Wait for failure response
-    let hasRetryBtn = false;
-    for (let i = 0; i < 20; i++) {
-      await new Promise((r) => setTimeout(r, 400));
-      hasRetryBtn =
-        (await evalCode(`
-          (() => {
-            const btn = document.querySelector("button[data-testid^='btn-retry-']");
-            return btn !== null && btn.textContent.includes("Retry Analysis");
-          })()
-        `)) || false;
-      if (hasRetryBtn) break;
-    }
+    const hasRetryBtn = await waitFor(async () => {
+      const btn = await evalCode(`
+        (() => {
+          const b = document.querySelector("button[data-testid^='btn-retry-']");
+          return b !== null && b.textContent.includes("Retry Analysis");
+        })()
+      `);
+      return Boolean(btn);
+    }, 10000);
     assert(hasRetryBtn, "Expected 'Retry Analysis' button on card after job failure");
 
     const errorBannerText = await evalCode('document.querySelector("main")?.textContent');
@@ -487,8 +492,8 @@ async function runCp5_6cPollingAndStatesTests() {
         if (btn) btn.click();
       })()
     `);
-    await new Promise((r) => setTimeout(r, 600));
-    assert(failAttempts === 2, `Expected 2nd attempt triggered by Retry, got: ${failAttempts}`);
+    const retryTriggered = await waitFor(async () => failAttempts === 2, 10000);
+    assert(retryTriggered, `Expected 2nd attempt triggered by Retry, got: ${failAttempts}`);
     console.log("  ✓ 'Retry Analysis' successfully triggers re-analysis.");
 
     ws.removeEventListener("message", failHandler);
@@ -499,7 +504,11 @@ async function runCp5_6cPollingAndStatesTests() {
     // ─────────────────────────────────────────────────────────────
     console.log("\n[Test 5] Duplicate Click Prevention & Timer Cleanup on Unmount");
     await send("Page.navigate", { url: "http://localhost:3000/my-repositories" });
-    await new Promise((r) => setTimeout(r, 2000));
+    const test5PageLoaded = await waitFor(async () => {
+      const count = await evalCode('document.querySelectorAll("button[data-testid^=\'btn-analyze-\']").length');
+      return (count || 0) >= 1;
+    }, 15000);
+    assert(test5PageLoaded, "Failed to reload repository cards for Test 5 within 15s");
 
     let inflightAnalyzeRequests = 0;
     let inflightJobRequests = 0;
@@ -573,7 +582,8 @@ async function runCp5_6cPollingAndStatesTests() {
         }
       })()
     `);
-    await new Promise((r) => setTimeout(r, 600));
+    const analyzeFired = await waitFor(async () => inflightAnalyzeRequests >= 1, 5000);
+    assert(analyzeFired, "Expected analyze request to fire within 5s");
 
     // Verify only 1 request was sent
     assert(
@@ -583,8 +593,8 @@ async function runCp5_6cPollingAndStatesTests() {
     console.log("  ✓ Duplicate click prevention confirmed: exactly 1 analysis request sent.");
 
     // Wait for at least one job poll to execute
-    await new Promise((r) => setTimeout(r, 2200));
-    assert(inflightJobRequests >= 1, "Expected polling to have begun");
+    const pollingBegan = await waitFor(async () => inflightJobRequests >= 1, 10000);
+    assert(pollingBegan, "Expected polling to have begun within 10s");
     const countBeforeUnmount = inflightJobRequests;
 
     // Now unmount / navigate away to Explore
@@ -596,10 +606,12 @@ async function runCp5_6cPollingAndStatesTests() {
         if (exploreLink) exploreLink.click();
       })()
     `);
-    await new Promise((r) => setTimeout(r, 1000));
-
-    const currentNavPath = await evalCode("window.location.pathname");
-    assert(currentNavPath === "/", `Expected navigation to Explore (/), got: ${currentNavPath}`);
+    let currentNavPath = "";
+    const navToExploreOk = await waitFor(async () => {
+      currentNavPath = (await evalCode("window.location.pathname")) || "";
+      return currentNavPath === "/";
+    }, 10000);
+    assert(navToExploreOk, `Expected navigation to Explore (/), got: ${currentNavPath}`);
 
     // Wait another 3000ms (more than 1 polling interval of 2000ms)
     await new Promise((r) => setTimeout(r, 3000));

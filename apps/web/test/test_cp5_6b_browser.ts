@@ -1,4 +1,5 @@
 import { spawn, execSync } from "child_process";
+import { waitFor } from "./helpers/waitFor";
 
 const EDGE_PATH = "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe";
 const STARLETTE_ID = "2e945127-9c5d-4b5a-a0d9-9d52e2cbadfe";
@@ -113,7 +114,11 @@ async function runCp5_6bBrowserTests() {
     await send("Network.deleteCookies", { name: "codeworld_session", url: "http://localhost:8000" });
 
     await send("Page.navigate", { url: "http://localhost:3000/" });
-    await new Promise((r) => setTimeout(r, 2000)); // Wait for render and /auth/me to settle
+    const anonLoaded = await waitFor(async () => {
+      const href = await evalCode('document.querySelector("header a[href*=\'auth/github/login\']")?.getAttribute("href")');
+      return href === "http://localhost:8000/api/v1/auth/github/login";
+    }, 10000);
+    assert(anonLoaded, "Anonymous navbar failed to render Connect GitHub CTA within 10s");
 
     const navbarText = await evalCode('document.querySelector("header")?.textContent');
     assert(navbarText?.includes("CodeWorld"), `Expected CodeWorld in navbar, got: ${navbarText}`);
@@ -159,7 +164,11 @@ async function runCp5_6bBrowserTests() {
     });
 
     await send("Page.navigate", { url: "http://localhost:3000/" });
-    await new Promise((r) => setTimeout(r, 2500)); // Wait for render and /auth/me
+    const authLoaded = await waitFor(async () => {
+      const nav = await evalCode('document.querySelector("header")?.textContent');
+      return nav?.includes("VladFlorentina") || false;
+    }, 10000);
+    assert(authLoaded, "Authenticated navbar failed to display user 'VladFlorentina' within 10s");
 
     const usernameInNav = await evalCode(
       'document.querySelector("header")?.textContent'
@@ -191,7 +200,11 @@ async function runCp5_6bBrowserTests() {
     // ─────────────────────────────────────────────────────────────
     console.log("\n[Test 3] Browser Refresh -> Session remains recognized");
     await send("Page.reload");
-    await new Promise((r) => setTimeout(r, 2000));
+    const refreshPreserved = await waitFor(async () => {
+      const nav = await evalCode('document.querySelector("header")?.textContent');
+      return nav?.includes("VladFlorentina") || false;
+    }, 10000);
+    assert(refreshPreserved, "Session not preserved after page reload within 10s");
 
     const refreshedNav = await evalCode('document.querySelector("header")?.textContent');
     assert(
@@ -216,7 +229,12 @@ async function runCp5_6bBrowserTests() {
     `);
     assert(clickLogoutResult, "Failed to locate and click Logout button");
 
-    await new Promise((r) => setTimeout(r, 1500)); // Wait for POST /auth/logout
+    const logoutSucceeded = await waitFor(async () => {
+      const nav = await evalCode('document.querySelector("header")?.textContent');
+      const hasConnect = await evalCode('document.querySelector("header a[href*=\'auth/github/login\']") !== null');
+      return (!nav?.includes("VladFlorentina")) && Boolean(hasConnect);
+    }, 10000);
+    assert(logoutSucceeded, "Navbar failed to transition to logged out state after Logout click within 10s");
 
     const postLogoutNav = await evalCode('document.querySelector("header")?.textContent');
     assert(!postLogoutNav?.includes("VladFlorentina"), "Username must not appear after logout");
@@ -235,7 +253,12 @@ async function runCp5_6bBrowserTests() {
     // ─────────────────────────────────────────────────────────────
     console.log("\n[Test 5] Refresh after Logout -> Remains unauthenticated");
     await send("Page.reload");
-    await new Promise((r) => setTimeout(r, 2000));
+    const reloadLoggedOut = await waitFor(async () => {
+      const nav = await evalCode('document.querySelector("header")?.textContent');
+      const hasConnect = await evalCode('document.querySelector("header a[href*=\'auth/github/login\']") !== null');
+      return (!nav?.includes("VladFlorentina")) && Boolean(hasConnect);
+    }, 10000);
+    assert(reloadLoggedOut, "Navbar failed to remain unauthenticated after reload within 10s");
 
     const afterRefreshNav = await evalCode('document.querySelector("header")?.textContent');
     assert(!afterRefreshNav?.includes("VladFlorentina"), "Username must not appear after refresh when logged out");
@@ -258,7 +281,12 @@ async function runCp5_6bBrowserTests() {
     // ─────────────────────────────────────────────────────────────
     console.log("\n[Test 7] Public City Viewer (/city/[repositoryId])");
     await send("Page.navigate", { url: `http://localhost:3000/city/${STARLETTE_ID}` });
-    await new Promise((r) => setTimeout(r, 3000));
+    const cityViewerLoaded = await waitFor(async () => {
+      const hasCanvas = await evalCode('Boolean(document.querySelector("canvas"))');
+      const headerText = await evalCode('document.querySelector("h1")?.textContent');
+      return Boolean(hasCanvas) && (headerText?.includes("starlette") || false);
+    }, 15000);
+    assert(cityViewerLoaded, "Public City Viewer failed to render canvas and starlette header within 15s");
 
     const cityNavTitle = await evalCode('document.querySelector("header")?.textContent');
     assert(cityNavTitle?.includes("CodeWorld"), `Navbar brand missing on City page: ${cityNavTitle}`);
