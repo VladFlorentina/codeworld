@@ -6,6 +6,7 @@ from urllib.parse import urlencode
 
 from fastapi import HTTPException, status
 import httpx
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -241,3 +242,69 @@ async def get_valid_user_access_token(
 
     logger.info("Successfully refreshed and rotated tokens for user %s (%s).", user.id, user.github_login)
     return new_access_token
+
+
+async def upsert_user_from_oauth(
+    db: AsyncSession,
+    profile: dict,
+    token_data: dict,
+) -> User:
+    """
+    Persist or update a User record from GitHub OAuth profile and token exchange data.
+    Encrypts access and refresh tokens at rest with Fernet.
+    Calculates token expirations and preserves user identity by numeric GitHub ID.
+    Performs transactional commit and rollback on failure.
+    """
+    github_user_id = profile["id"]
+    github_login = profile["login"]
+    avatar_url = profile.get("avatar_url")
+
+    access_token = token_data["access_token"]
+    refresh_token = token_data.get("refresh_token")
+    expires_in = token_data.get("expires_in")
+    refresh_token_expires_in = token_data.get("refresh_token_expires_in")
+
+    now = datetime.now(timezone.utc)
+    user_token_expires_at = now + timedelta(seconds=int(expires_in)) if expires_in else None
+    refresh_token_expires_at = (
+        now + timedelta(seconds=int(refresh_token_expires_in)) if refresh_token_expires_in else None
+    )
+
+    enc_access = encrypt_token(access_token)
+    enc_refresh = encrypt_token(refresh_token) if refresh_token else None
+
+    stmt = select(User).where(User.github_user_id == github_user_id)
+    result = await db.execute(stmt)
+    user = result.scalars().first()
+
+    if user:
+        user.github_login = github_login
+        user.avatar_url = avatar_url
+        user.encrypted_user_access_token = enc_access
+        if enc_refresh:
+            user.encrypted_refresh_token = enc_refresh
+            user.refresh_token_expires_at = refresh_token_expires_at
+        user.user_token_expires_at = user_token_expires_at
+        user.updated_at = now
+    else:
+        user = User(
+            github_user_id=github_user_id,
+            github_login=github_login,
+            avatar_url=avatar_url,
+            encrypted_user_access_token=enc_access,
+            encrypted_refresh_token=enc_refresh,
+            user_token_expires_at=user_token_expires_at,
+            refresh_token_expires_at=refresh_token_expires_at if enc_refresh else None,
+            created_at=now,
+            updated_at=now,
+        )
+        db.add(user)
+
+    try:
+        await db.commit()
+        await db.refresh(user)
+        return user
+    except Exception:
+        await db.rollback()
+        raise
+

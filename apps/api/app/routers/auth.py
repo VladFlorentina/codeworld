@@ -1,17 +1,14 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import JSONResponse, RedirectResponse
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import get_db
 from app.schemas import UserProfileResponse
-from app.security.encryption import encrypt_token
 from app.security.pkce import generate_code_challenge, generate_code_verifier, generate_state
 from app.security.session import (
     create_pkce_state_cookie_value,
@@ -23,6 +20,7 @@ from app.services.github_auth import (
     build_github_authorize_url,
     exchange_code_for_user_token,
     fetch_github_user_profile,
+    upsert_user_from_oauth,
 )
 from codeworld_db import User
 
@@ -191,49 +189,20 @@ async def github_callback(
         _delete_pkce_cookie(resp)
         return resp
 
-    github_user_id = user_profile["id"]
-    github_login = user_profile["login"]
-    avatar_url = user_profile.get("avatar_url")
-
-    now = datetime.now(timezone.utc)
-    user_token_expires_at = now + timedelta(seconds=int(expires_in)) if expires_in else None
-    refresh_token_expires_at = (
-        now + timedelta(seconds=int(refresh_token_expires_in)) if refresh_token_expires_in else None
-    )
-
-    enc_access = encrypt_token(access_token)
-    enc_refresh = encrypt_token(refresh_token) if refresh_token else None
-
-    # Upsert by numeric GitHub ID to preserve identity across username changes
-    stmt = select(User).where(User.github_user_id == github_user_id)
-    result = await db.execute(stmt)
-    user = result.scalars().first()
-
-    if user:
-        user.github_login = github_login
-        user.avatar_url = avatar_url
-        user.encrypted_user_access_token = enc_access
-        if enc_refresh:
-            user.encrypted_refresh_token = enc_refresh
-        user.user_token_expires_at = user_token_expires_at
-        user.refresh_token_expires_at = refresh_token_expires_at
-        user.updated_at = now
-    else:
-        user = User(
-            github_user_id=github_user_id,
-            github_login=github_login,
-            avatar_url=avatar_url,
-            encrypted_user_access_token=enc_access,
-            encrypted_refresh_token=enc_refresh,
-            user_token_expires_at=user_token_expires_at,
-            refresh_token_expires_at=refresh_token_expires_at,
-            created_at=now,
-            updated_at=now,
+    try:
+        user = await upsert_user_from_oauth(
+            db=db,
+            profile=user_profile,
+            token_data=token_data,
         )
-        db.add(user)
-
-    await db.commit()
-    await db.refresh(user)
+    except Exception as exc:
+        logger.error("Failed to persist user from OAuth callback: %s", exc.__class__.__name__)
+        resp = JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"detail": "Failed to save user session."},
+        )
+        _delete_pkce_cookie(resp)
+        return resp
 
     session_token = create_session_cookie_value(
         user_id=user.id,

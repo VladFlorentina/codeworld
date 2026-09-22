@@ -207,6 +207,80 @@ async def run_auth_tests():
                 print("✓ PASS: Repeat callback for same github_user_id cleanly updates existing user.")
 
             # ─────────────────────────────────────────────────────────────
+            # 4b. Repeat Callback Without New Refresh Token
+            # ─────────────────────────────────────────────────────────────
+            print("\n--- [Test 4b: Repeat Callback Without Refresh Token Preserves Stored Token & Expiration] ---")
+            state_no_refresh = generate_state(32)
+            verifier_no_refresh = generate_code_verifier(64)
+            no_refresh_cookie = create_pkce_state_cookie_value(state_no_refresh, verifier_no_refresh, max_age=600)
+
+            async with AsyncSessionLocal() as session:
+                res = await session.execute(select(User).where(User.github_user_id == 99887766))
+                u_before = res.scalars().first()
+                assert u_before is not None
+                orig_refresh_encrypted = u_before.encrypted_refresh_token
+                orig_refresh_expires_at = u_before.refresh_token_expires_at
+                assert orig_refresh_expires_at is not None
+
+            mock_token_no_refresh = {
+                "access_token": "ghu_AccessTokenWithoutNewRefresh",
+                "expires_in": 3600,
+            }
+            mock_profile_same = {
+                "id": 99887766,
+                "login": "codeworld-tester-renamed",
+                "avatar_url": "https://avatars.githubusercontent.com/u/99887766?v=5",
+            }
+
+            with patch("app.routers.auth.exchange_code_for_user_token", new=AsyncMock(return_value=mock_token_no_refresh)), \
+                 patch("app.routers.auth.fetch_github_user_profile", new=AsyncMock(return_value=mock_profile_same)):
+
+                cb_no_ref_res = await client.get(
+                    f"/api/v1/auth/github/callback?code=no_ref_code&state={state_no_refresh}",
+                    cookies={settings.oauth_pkce_cookie_name: no_refresh_cookie},
+                    follow_redirects=False,
+                )
+                assert cb_no_ref_res.status_code == 307
+
+                async with AsyncSessionLocal() as session:
+                    res = await session.execute(select(User).where(User.github_user_id == 99887766))
+                    u_after = res.scalars().first()
+                    assert u_after is not None
+                    assert decrypt_token(u_after.encrypted_user_access_token) == "ghu_AccessTokenWithoutNewRefresh"
+                    assert u_after.encrypted_refresh_token == orig_refresh_encrypted
+                    assert u_after.refresh_token_expires_at == orig_refresh_expires_at
+                    print("  Verified refresh token and its expiration were preserved when not returned by GitHub.")
+
+                print("✓ PASS: Refresh token and expiration preserved when GitHub omits refresh token.")
+
+            # ─────────────────────────────────────────────────────────────
+            # 4c. Database Persistence Error Handling (Rollback & Clean Error)
+            # ─────────────────────────────────────────────────────────────
+            print("\n--- [Test 4c: Persistence Error -> Rollback & No Session Cookie] ---")
+            state_err = generate_state(32)
+            verifier_err = generate_code_verifier(64)
+            err_cookie = create_pkce_state_cookie_value(state_err, verifier_err, max_age=600)
+
+            with patch("app.routers.auth.exchange_code_for_user_token", new=AsyncMock(return_value=mock_token_resp)), \
+                 patch("app.routers.auth.fetch_github_user_profile", new=AsyncMock(return_value=mock_user_profile)), \
+                 patch("app.routers.auth.upsert_user_from_oauth", new=AsyncMock(side_effect=RuntimeError("Simulated DB error"))):
+
+                cb_err_res = await client.get(
+                    f"/api/v1/auth/github/callback?code=err_code&state={state_err}",
+                    cookies={settings.oauth_pkce_cookie_name: err_cookie},
+                    follow_redirects=False,
+                )
+                assert cb_err_res.status_code == 500
+                assert cb_err_res.json()["detail"] == "Failed to save user session."
+                assert settings.session_cookie_name not in cb_err_res.cookies
+                pkce_delete_header = any(
+                    settings.oauth_pkce_cookie_name in h and "Max-Age=0" in h
+                    for h in cb_err_res.headers.get_list("set-cookie")
+                )
+                assert pkce_delete_header, "PKCE cookie must be deleted even on DB error"
+                print("✓ PASS: Database persistence error triggers 500, PKCE deletion, and no session issuance.")
+
+            # ─────────────────────────────────────────────────────────────
             # 5. /auth/me Endpoint
             # ─────────────────────────────────────────────────────────────
             print("\n--- [Test 5: GET /auth/me] ---")
