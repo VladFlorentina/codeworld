@@ -301,9 +301,9 @@ async function runWorldMapBrowserTests() {
     console.log("✓ Reset View cleanly restored initial camera positioning.");
 
     // -------------------------------------------------------------
-    // Test 8: Deterministic City Navigation
+    // Test 8: City Selection & Navigation via Inspector CTA
     // -------------------------------------------------------------
-    console.log("\n[Test 8] Testing city click navigation to /city/[repositoryId]...");
+    console.log("\n[Test 8] Testing city selection & navigation via Inspector CTA...");
     const targetCity = worldData.cities[0];
     const clickInfo = await evalCode(`
       (() => {
@@ -339,12 +339,30 @@ async function runWorldMapBrowserTests() {
       buttons: 0,
     });
 
+    // 1. Verify normal click prevented direct navigation and URL remains on '/'
+    const pathAfterCityClick = await evalCode(`window.location.pathname`);
+    assert(
+      pathAfterCityClick === "/",
+      `Expected path to remain '/' after city click (navigation prevented), got '${pathAfterCityClick}'`
+    );
+
+    // 2. Verify WorldInspector opened
+    const hasInspector = await waitFor(async () => {
+      return Boolean(await evalCode(`document.querySelector('[data-testid="world-inspector"]') !== null`));
+    }, 6000);
+    assert(hasInspector, "WorldInspector must open upon normal city node click");
+    console.log("✓ Normal click opened WorldInspector and kept current URL on '/'.");
+
+    // 3. Click CTA [data-testid="inspector-enter-city"]
+    await evalCode(`document.querySelector('[data-testid="inspector-enter-city"]')?.click()`);
+
+    // 4. Verify navigation to /city/[repositoryId]
     const navigated = await waitFor(async () => {
       const path = await evalCode(`window.location.pathname`);
       return path === `/city/${targetCity.repository_id}`;
     }, 8000);
-    assert(navigated, `Expected navigation to '/city/${targetCity.repository_id}'`);
-    console.log(`✓ Successfully navigated to /city/${targetCity.repository_id} on city click.`);
+    assert(navigated, `Expected navigation to '/city/${targetCity.repository_id}' via inspector CTA`);
+    console.log(`✓ Successfully navigated to /city/${targetCity.repository_id} via inspector CTA.`);
 
     // -------------------------------------------------------------
     // Test 9: Deterministic Loading State via Request Hold
