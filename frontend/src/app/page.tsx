@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useJobPolling } from "@/hooks/useJobPolling";
 import { submitRepository } from "@/lib/api";
 import { JobStatus } from "@/types/city";
+import { WorldMap } from "@/components/world/WorldMap";
 
 const FEATURED_WORLDS = [
   {
@@ -234,8 +235,14 @@ export default function ExplorePage() {
             </button>
           </div>
         )}
+      </div>
 
-        <div className="mt-12 text-left">
+      {/* Phase 6: Core 2D SVG World Map */}
+      <section className="relative z-10 mt-12 w-full max-w-5xl text-left" data-testid="world-map-section">
+        <WorldMap />
+      </section>
+
+      <div className="relative z-10 w-full max-w-2xl mt-12 text-left">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-xs font-mono uppercase tracking-wider text-neutral-500">
               Featured Worlds (Ready to Explore)
@@ -273,7 +280,6 @@ export default function ExplorePage() {
             ))}
           </div>
         </div>
-      </div>
     </main>
   );
 }

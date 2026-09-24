@@ -5,6 +5,7 @@ import {
   GitHubRepositoriesResponse,
   UserDTO,
 } from "@/types/auth";
+import { WorldMapResponse } from "@/types/world";
 
 export class ApiError extends Error {
   status: number;
@@ -319,5 +320,44 @@ export async function getJobStatus(jobId: string): Promise<JobStatusResponse> {
   }
 
   const data: JobStatusResponse = await response.json();
+  return data;
+}
+
+/**
+ * Fetch all analyzed public repositories formatted for the World Map.
+ * Endpoint: GET /api/v1/explore/world
+ */
+export async function getWorldMap(
+  signal?: AbortSignal
+): Promise<WorldMapResponse> {
+  const baseUrl = getBaseUrl();
+  const endpoint = `${baseUrl}/explore/world`;
+
+  const response = await fetch(endpoint, {
+    method: "GET",
+    headers: {
+      Accept: "application/json",
+    },
+    cache: "no-store",
+    signal,
+  });
+
+  if (!response.ok) {
+    const rawText = await response.text();
+    let errorDetail = "";
+    try {
+      const errorJson = JSON.parse(rawText);
+      errorDetail = errorJson.detail || JSON.stringify(errorJson);
+    } catch {
+      errorDetail = rawText;
+    }
+    throw new ApiError(
+      errorDetail || `Failed to fetch world map: [HTTP ${response.status}]`,
+      response.status,
+      response.statusText
+    );
+  }
+
+  const data: WorldMapResponse = await response.json();
   return data;
 }
