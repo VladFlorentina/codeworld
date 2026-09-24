@@ -7,9 +7,10 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { WorldBounds, WorldLayout } from "@/types/world";
+import { WorldBounds, WorldLayout, PositionedCity } from "@/types/world";
 import { getEcosystemTheme } from "./worldTheme";
 import { CityNode } from "./CityNode";
+import { WorldInspector } from "./WorldInspector";
 
 interface WorldViewportProps {
   layout: WorldLayout;
@@ -70,6 +71,13 @@ export function WorldViewport({ layout }: WorldViewportProps) {
   const [zoom, setZoom] = useState<number>(1);
   const [minZoom, setMinZoom] = useState<number>(0.1);
   const [maxZoom, setMaxZoom] = useState<number>(4);
+
+  // Inspector selection state
+  const [selectedCityId, setSelectedCityId] = useState<string | null>(null);
+  const selectedCity = useMemo(
+    () => layout.cities.find((c) => c.city.repository_id === selectedCityId) || null,
+    [layout.cities, selectedCityId]
+  );
 
   // Interaction refs
   const isPanningRef = useRef<boolean>(false);
@@ -198,13 +206,34 @@ export function WorldViewport({ layout }: WorldViewportProps) {
     }, 50);
   };
 
-  // Prevent link navigation if drag occurred
-  const handleCityClick = useCallback((e: React.MouseEvent) => {
-    if (didDragRef.current) {
-      e.preventDefault();
-      e.stopPropagation();
-    }
+  // City selection & drag handlers
+  const handleSelectCity = useCallback((city: PositionedCity) => {
+    setSelectedCityId(city.city.repository_id);
   }, []);
+
+  const isDragActive = useCallback(() => didDragRef.current, []);
+
+  // Background SVG click handler (deselects if click was on empty SVG canvas)
+  const handleSvgClick = (e: React.MouseEvent<SVGSVGElement>) => {
+    if (didDragRef.current) return;
+    const target = e.target as Element | null;
+    const isCity = target?.closest('[data-testid^="city-node-"]');
+    if (!isCity) {
+      setSelectedCityId(null);
+    }
+  };
+
+  // Keyboard Escape listener: closes inspector
+  useEffect(() => {
+    if (!selectedCityId) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setSelectedCityId(null);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [selectedCityId]);
 
   // Zoom controls (+, -, reset)
   const handleZoomCenter = (factor: number) => {
@@ -296,19 +325,22 @@ export function WorldViewport({ layout }: WorldViewportProps) {
         <g className="cities-layer">
           {layout.cities.map((posCity) => {
             const theme = getEcosystemTheme(posCity.ecosystem);
+            const isSelected = posCity.city.repository_id === selectedCityId;
             return (
               <CityNode
                 key={posCity.city.repository_id}
                 city={posCity}
                 theme={theme}
-                onCityClick={handleCityClick}
+                isSelected={isSelected}
+                onSelect={handleSelectCity}
+                isDragActive={isDragActive}
               />
             );
           })}
         </g>
       </>
     );
-  }, [layout, handleCityClick]);
+  }, [layout, selectedCityId, handleSelectCity, isDragActive]);
 
   return (
     <div
@@ -320,6 +352,7 @@ export function WorldViewport({ layout }: WorldViewportProps) {
         data-testid="world-map-svg"
         width="100%"
         height="100%"
+        onClick={handleSvgClick}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
@@ -334,8 +367,8 @@ export function WorldViewport({ layout }: WorldViewportProps) {
         </g>
       </svg>
 
-      {/* Floating Viewport Controls */}
-      <div className="absolute bottom-4 right-4 flex items-center gap-1.5 rounded-xl border border-neutral-800/80 bg-neutral-900/90 p-1.5 backdrop-blur-md shadow-lg">
+      {/* Floating Viewport Controls: top-right on mobile, bottom-right on desktop */}
+      <div className="absolute top-4 right-4 md:top-auto md:bottom-4 md:right-4 z-10 flex items-center gap-1.5 rounded-xl border border-neutral-800/80 bg-neutral-900/90 p-1.5 backdrop-blur-md shadow-lg">
         <button
           type="button"
           data-testid="zoom-in-btn"
@@ -367,7 +400,7 @@ export function WorldViewport({ layout }: WorldViewportProps) {
       </div>
 
       {/* City count & status tag */}
-      <div className="absolute top-4 left-4 flex items-center gap-2 rounded-xl border border-neutral-800/80 bg-neutral-900/80 px-3 py-1.5 backdrop-blur-md">
+      <div className="absolute top-4 left-4 z-10 flex items-center gap-2 rounded-xl border border-neutral-800/80 bg-neutral-900/80 px-3 py-1.5 backdrop-blur-md">
         <span className="h-2 w-2 rounded-full bg-emerald-400" />
         <span className="text-xs font-mono text-neutral-300">
           {layout.totalCities} {layout.totalCities === 1 ? "Repository" : "Repositories"}
@@ -377,6 +410,14 @@ export function WorldViewport({ layout }: WorldViewportProps) {
           {layout.continents.length} {layout.continents.length === 1 ? "Ecosystem" : "Ecosystems"}
         </span>
       </div>
+
+      {/* Inspector Panel */}
+      {selectedCity && (
+        <WorldInspector
+          city={selectedCity}
+          onClose={() => setSelectedCityId(null)}
+        />
+      )}
     </div>
   );
 }
