@@ -18,6 +18,7 @@ from codeworld_db.models import (
     FileRecord,
     Repository,
     User,
+    WorldIndexRepository,
 )
 
 __all__ = [
@@ -28,6 +29,7 @@ __all__ = [
     "EdgeType",
     "User",
     "Repository",
+    "WorldIndexRepository",
     "AnalysisRun",
     "FileRecord",
     "DependencyEdge",

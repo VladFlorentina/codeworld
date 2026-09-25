@@ -17,6 +17,7 @@ from codeworld_db import (
     RepositoryStatus,
     SyncType,
     User,
+    WorldIndexRepository,
 )
 
 __all__ = [
@@ -26,6 +27,7 @@ __all__ = [
     "AnalysisRunStatus",
     "EdgeType",
     "Repository",
+    "WorldIndexRepository",
     "AnalysisRun",
     "FileRecord",
     "DependencyEdge",

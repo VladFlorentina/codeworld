@@ -6,17 +6,21 @@ from datetime import datetime, timezone
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    CheckConstraint,
     DateTime,
     Enum,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
     UniqueConstraint,
     false,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.ext.mutable import MutableDict
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from codeworld_db.base import Base
@@ -26,6 +30,7 @@ from codeworld_db.enums import (
     RepositoryStatus,
     SyncType,
 )
+from codeworld_db.world_taxonomy import CURRENT_TAXONOMY_VERSION
 
 
 def utcnow() -> datetime:
@@ -103,6 +108,125 @@ class Repository(Base):
     )
     cities: Mapped[list["City"]] = relationship(
         back_populates="repository", cascade="all, delete-orphan"
+    )
+
+
+class WorldIndexRepository(Base):
+    """Public GitHub catalog entry, independent of CodeWorld analysis state."""
+
+    __tablename__ = "world_index_repositories"
+
+    github_repository_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    github_owner_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    owner_login: Mapped[str] = mapped_column(String(255), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    full_name: Mapped[str] = mapped_column(String(512), nullable=False)
+    canonical_url: Mapped[str] = mapped_column(String(1024), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    default_branch: Mapped[str | None] = mapped_column(String(255))
+    visibility: Mapped[str] = mapped_column(String(16), nullable=False)
+    is_fork: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    is_archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    github_created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    github_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    github_pushed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    discovery_source: Mapped[str] = mapped_column(String(64), nullable=False)
+    first_discovered_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow, server_default=text("now()")
+    )
+    last_refreshed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    last_public_verified_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    language_bytes: Mapped[dict[str, int]] = mapped_column(
+        MutableDict.as_mutable(JSONB), nullable=False, default=dict,
+        server_default=text("'{}'::jsonb"),
+    )
+    language_observed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    observed_head_sha: Mapped[str | None] = mapped_column(String(64))
+
+    taxonomy_version: Mapped[str] = mapped_column(
+        String(32), nullable=False, default=CURRENT_TAXONOMY_VERSION,
+        server_default=CURRENT_TAXONOMY_VERSION,
+    )
+    classification_version: Mapped[str | None] = mapped_column(String(32))
+    classification_state: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="unclassified", server_default="unclassified"
+    )
+    home_ecosystem: Mapped[str | None] = mapped_column(String(64))
+    confidence: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="unassessed", server_default="unassessed"
+    )
+    reason_code: Mapped[str] = mapped_column(
+        String(64), nullable=False, default="not_evaluated", server_default="not_evaluated"
+    )
+    # Reviewed decisions retain their own observation snapshot: raw and mapped
+    # bytes, observation time/HEAD, taxonomy/classification versions, share
+    # basis, leader/runner-up shares, decision method and reason.
+    classification_evidence: Mapped[dict | None] = mapped_column(MutableDict.as_mutable(JSONB))
+    classified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    repository_id: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("repositories.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    repository: Mapped["Repository | None"] = relationship("Repository")
+
+    __table_args__ = (
+        CheckConstraint("github_repository_id > 0", name="ck_world_index_github_repository_id_positive"),
+        CheckConstraint("github_owner_id > 0", name="ck_world_index_github_owner_id_positive"),
+        CheckConstraint("visibility = 'public'", name="ck_world_index_public_only"),
+        CheckConstraint("btrim(reason_code) <> ''", name="ck_world_index_reason_present"),
+        CheckConstraint(
+            "(classification_state = 'home' AND home_ecosystem IS NOT NULL "
+            "AND btrim(home_ecosystem) <> '') OR "
+            "(classification_state IN ('confluence', 'unclassified') AND home_ecosystem IS NULL)",
+            name="ck_world_index_classification_home",
+        ),
+        CheckConstraint(
+            "confidence IN ('unassessed', 'low', 'medium', 'high')",
+            name="ck_world_index_confidence",
+        ),
+        CheckConstraint("jsonb_typeof(language_bytes) = 'object'", name="ck_world_index_language_bytes_object"),
+        CheckConstraint(
+            "classification_evidence IS NULL OR jsonb_typeof(classification_evidence) = 'object'",
+            name="ck_world_index_classification_evidence_object",
+        ),
+        CheckConstraint(
+            "classification_state = 'unclassified' OR COALESCE(("
+            "classification_version IS NOT NULL AND classified_at IS NOT NULL "
+            "AND reason_code <> 'not_evaluated' "
+            "AND jsonb_typeof(classification_evidence->'language_bytes_snapshot') = 'object' "
+            "AND classification_evidence->'language_bytes_snapshot' <> '{}'::jsonb "
+            "AND jsonb_typeof(classification_evidence->'ecosystem_bytes') = 'object' "
+            "AND classification_evidence->'ecosystem_bytes' <> '{}'::jsonb "
+            "AND btrim(classification_evidence->>'language_observed_at') <> '' "
+            "AND jsonb_typeof(classification_evidence->'observed_head_sha') IN ('string', 'null') "
+            "AND classification_evidence->>'taxonomy_version' = taxonomy_version "
+            "AND classification_evidence->>'classification_version' = classification_version "
+            "AND btrim(classification_evidence->>'share_basis') <> '' "
+            "AND btrim(classification_evidence->>'decision_method') <> '' "
+            "AND btrim(classification_evidence->>'decision_reason') <> '' "
+            "AND jsonb_typeof(classification_evidence->'leader'->'ecosystem') = 'string' "
+            "AND jsonb_typeof(classification_evidence->'leader'->'share') = 'number' "
+            "AND (classification_evidence->'leader'->>'share')::numeric BETWEEN 0 AND 1 "
+            "AND (classification_evidence->'ecosystem_bytes' ? "
+            "(classification_evidence->'leader'->>'ecosystem')) "
+            "AND ("
+            "(jsonb_typeof(classification_evidence->'runner_up') = 'null' "
+            "AND classification_state = 'home') OR "
+            "(jsonb_typeof(classification_evidence->'runner_up'->'ecosystem') = 'string' "
+            "AND jsonb_typeof(classification_evidence->'runner_up'->'share') = 'number' "
+            "AND (classification_evidence->'runner_up'->>'share')::numeric BETWEEN 0 AND 1 "
+            "AND (classification_evidence->'ecosystem_bytes' ? "
+            "(classification_evidence->'runner_up'->>'ecosystem')))"
+            ")), FALSE)",
+            name="ck_world_index_reviewed_evidence",
+        ),
+        UniqueConstraint("repository_id", name="uq_world_index_repository_id"),
+        Index("ix_world_index_owner_repo", "github_owner_id", "github_repository_id"),
+        Index("ix_world_index_classification", "classification_state", "home_ecosystem", "github_repository_id"),
+        Index("ix_world_index_last_refreshed", "last_refreshed_at"),
     )
 
 
